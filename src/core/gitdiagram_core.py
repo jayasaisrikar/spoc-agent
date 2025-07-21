@@ -6,7 +6,7 @@ import re
 import json
 import os
 from typing import Dict, List, Optional, AsyncGenerator
-from gitdiagram_core_prompts import (
+from .gitdiagram_core_prompts import (
     SYSTEM_FIRST_PROMPT,
     SYSTEM_SECOND_PROMPT,
     SYSTEM_THIRD_PROMPT,

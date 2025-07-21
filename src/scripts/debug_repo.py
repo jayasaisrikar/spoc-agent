@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.append('.')
 
-from repo_handler import RepoHandler
+from ..core.repo_handler import RepoHandler
 
 def test_zip_processing(zip_path):
     """Test ZIP file processing with detailed debugging"""

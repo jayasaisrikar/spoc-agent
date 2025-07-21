@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
 from datetime import datetime
-from memory_manager import MemoryManager
-from knowledge_base import KnowledgeBase
+from .memory_manager import MemoryManager
+from ..data.knowledge_base import KnowledgeBase
 import logging
 import os
 import uuid

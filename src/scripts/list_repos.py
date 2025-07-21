@@ -2,7 +2,7 @@
 """
 Simple script to list all repositories in the knowledge base
 """
-from knowledge_base import KnowledgeBase
+from ..data.knowledge_base import KnowledgeBase
 
 def main():
     kb = KnowledgeBase()

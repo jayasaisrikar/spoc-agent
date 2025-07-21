@@ -3,7 +3,7 @@
 Quick solution to re-analyze repository with complete file access
 """
 import os
-from knowledge_base import KnowledgeBase
+from ..data.knowledge_base import KnowledgeBase
 
 def main():
     print("🔄 Repository File Access Issue - Quick Solutions")

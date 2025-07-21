@@ -912,3 +912,12 @@ Server Error (500)
 2025-07-18 15:23:58,881 - google_genai._api_client - WARNING - Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
 2025-07-18 15:23:59,797 - memory_manager - INFO - Memory system initialized with mem0 enhancement
 2025-07-18 15:23:59,797 - conversation_manager - INFO - Memory manager initialized in conversation manager
+2025-07-22 00:45:36,201 - google_genai._api_client - WARNING - Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2025-07-22 00:46:52,031 - google_genai._api_client - WARNING - Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2025-07-22 00:46:53,430 - src.ai.memory_manager - INFO - Memory system initialized with mem0 enhancement
+2025-07-22 00:46:53,431 - src.ai.conversation_manager - INFO - Memory manager initialized in conversation manager
+2025-07-22 00:48:05,439 - google_genai._api_client - WARNING - Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2025-07-22 00:48:22,810 - google_genai._api_client - WARNING - Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2025-07-22 00:48:23,938 - src.ai.memory_manager - INFO - Memory system initialized with mem0 enhancement
+2025-07-22 00:48:23,939 - src.ai.conversation_manager - INFO - Memory manager initialized in conversation manager
+2025-07-22 00:50:11,650 - google_genai._api_client - WARNING - Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
