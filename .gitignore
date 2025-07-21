@@ -48,8 +48,18 @@ htmlcov/
 .vscode/
 *.swp
 *.swo
-.DS_Storek
+.DS_Store
+
+# Database and storage files
 knowledge_base.db
 mem0_storage/
 cache/
 *.db
+*.sqlite3
+
+# Environment and sensitive files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
