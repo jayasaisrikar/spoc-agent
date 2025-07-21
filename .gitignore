@@ -48,4 +48,7 @@ htmlcov/
 .vscode/
 *.swp
 *.swo
-.DS_Store
+.DS_Storek
+knowledge_base.db
+mem0_storage/
+cache/
