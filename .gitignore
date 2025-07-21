@@ -52,3 +52,4 @@ htmlcov/
 knowledge_base.db
 mem0_storage/
 cache/
+*.db
