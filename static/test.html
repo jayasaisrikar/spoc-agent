@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Test</title>
+</head>
+<body>
+    <h1>API Test</h1>
+    <button onclick="testFeatureSuggestion()">Test Feature Suggestion</button>
+    <div id="result"></div>
+
+    <script>
+        async function testFeatureSuggestion() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('repo_name', 'test-repo');
+                formData.append('feature_description', 'Add user authentication');
+                
+                const response = await fetch('/suggest-feature', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                console.log('Response:', data);
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <h3>Success!</h3>
+                        <p><strong>Feature:</strong> ${data.feature_description}</p>
+                        <p><strong>Model Used:</strong> ${data.suggestions.model_used}</p>
+                        <div style="border: 1px solid #ccc; padding: 10px; margin: 10px 0;">
+                            ${data.suggestions.suggestions.replace(/\n/g, '<br>')}
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<p style="color: red;">Error: ${data.error}</p>`;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

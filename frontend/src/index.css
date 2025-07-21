@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  body {
+    @apply bg-white text-gray-900;
+  }
+  
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db #f9fafb;
+  }
+  
+  *::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  *::-webkit-scrollbar-track {
+    @apply bg-gray-50;
+  }
+  
+  *::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+  
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+}
+
+@layer components {
+  .chat-bubble {
+    @apply rounded-xl px-4 py-3 max-w-3xl animate-slide-up;
+  }
+  
+  .chat-bubble-user {
+    @apply bg-gray-900 text-white ml-auto;
+  }
+  
+  .chat-bubble-assistant {
+    @apply bg-gray-50 text-gray-900 border border-gray-200;
+  }
+  
+  .code-block {
+    @apply bg-gray-50 border border-gray-200 rounded-lg p-4 font-mono text-sm overflow-x-auto;
+  }
+  
+  .typing-indicator {
+    @apply flex space-x-1;
+  }
+  
+  .typing-dot {
+    @apply w-2 h-2 bg-gray-400 rounded-full animate-pulse-soft;
+    animation-delay: calc(var(--delay) * 0.2s);
+  }
+}
+
+/* Custom animations */
+@keyframes typewriter {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+.typewriter {
+  overflow: hidden;
+  border-right: 2px solid #374151;
+  white-space: nowrap;
+  animation: typewriter 2s steps(40, end);
+}
