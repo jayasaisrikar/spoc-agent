@@ -12,10 +12,15 @@ from src.core.diagram_generator import DiagramGenerator
 from src.ai.multi_model_client import MultiModelClient
 from src.data.knowledge_base import KnowledgeBase
 from src.ai.conversation_manager import ConversationManager
+# Import new agentic system
+from src.agentic.integration import AgenticIntegrationAdapter, create_agentic_endpoints
+from src.agentic.core.orchestrator import AgenticOrchestrator
+from src.agentic.core.models import Goal, TaskType
 import os
 from dotenv import load_dotenv
 import sqlite3
 import json
+from typing import Dict, Any, Optional
 
 load_dotenv()
 
@@ -55,6 +60,21 @@ knowledge_base = KnowledgeBase()
 # Initialize conversation manager
 conversation_manager = ConversationManager()
 
+# Initialize agentic integration adapter
+agentic_adapter = AgenticIntegrationAdapter()
+
+async def startup_event():
+    """Initialize agentic orchestrator on startup"""
+    logger.info("Initializing agentic orchestrator...")
+    success = await agentic_adapter.initialize()
+    if success:
+        logger.info("✅ Agentic orchestrator initialized successfully")
+    else:
+        logger.warning("⚠️ Agentic orchestrator initialization failed, falling back to basic mode")
+
+# Add startup event
+app.add_event_handler("startup", startup_event)
+
 
 @app.get("/", response_class=HTMLResponse)
 async def get_interface():
@@ -63,16 +83,69 @@ async def get_interface():
         with open("static/index.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
-        return HTMLResponse(content="""
+        agentic_status = "✅ Active" if agentic_adapter._initialized else "⚠️ Not Available"
+        return HTMLResponse(content=f"""
         <html>
-            <head><title>AI Code Architecture Agent</title></head>
+            <head>
+                <title>AI Code Architecture Agent</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                    .status {{ padding: 10px; border-radius: 5px; margin: 10px 0; }}
+                    .active {{ background-color: #d4edda; border: 1px solid #c3e6cb; }}
+                    .inactive {{ background-color: #f8d7da; border: 1px solid #f5c6cb; }}
+                    .endpoint {{ background-color: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; }}
+                </style>
+            </head>
             <body>
                 <h1>AI Code Architecture Agent</h1>
-                <p>Web interface will be available soon. Use the API endpoints for now:</p>
+                <div class="status {'active' if agentic_adapter._initialized else 'inactive'}">
+                    <strong>Agentic Orchestrator Status:</strong> {agentic_status}
+                </div>
+                
+                <h2>Available Endpoints:</h2>
+                
+                <div class="endpoint">
+                    <h3>Repository Analysis</h3>
+                    <ul>
+                        <li><strong>POST /analyze-repo</strong> - Analyze a repository (enhanced with agentic capabilities)</li>
+                        <li><strong>POST /api/agentic/analyze/repository/{{repo_name}}</strong> - Full autonomous repository analysis</li>
+                        <li><strong>POST /api/agentic/analyze/organization/{{organization}}</strong> - Autonomous organization-wide analysis</li>
+                    </ul>
+                </div>
+                
+                <div class="endpoint">
+                    <h3>Feature Suggestions</h3>
+                    <ul>
+                        <li><strong>POST /suggest-feature</strong> - Get feature placement suggestions (enhanced with agentic capabilities)</li>
+                        <li><strong>POST /api/agentic/suggest/feature</strong> - Autonomous feature implementation suggestions</li>
+                    </ul>
+                </div>
+                
+                <div class="endpoint">
+                    <h3>Smart Analysis</h3>
+                    <ul>
+                        <li><strong>POST /api/agentic/analyze/smart</strong> - Smart analysis with automatic approach selection</li>
+                        <li><strong>GET /api/agentic/status</strong> - Get agentic orchestrator status and metrics</li>
+                    </ul>
+                </div>
+                
+                <div class="endpoint">
+                    <h3>Repository Management</h3>
+                    <ul>
+                        <li><strong>GET /repositories</strong> - List analyzed repositories</li>
+                        <li><strong>POST /ask-question</strong> - Ask questions about repositories</li>
+                        <li><strong>GET /health</strong> - Health check</li>
+                    </ul>
+                </div>
+                
+                <h2>Agentic Capabilities:</h2>
                 <ul>
-                    <li>POST /analyze-repo - Analyze a repository</li>
-                    <li>POST /suggest-feature - Get feature placement suggestions</li>
-                    <li>GET /repositories - List analyzed repositories</li>
+                    <li>🤖 <strong>Autonomous Planning</strong> - Breaks down complex tasks automatically</li>
+                    <li>🔧 <strong>Self-Correction</strong> - Detects and fixes errors during analysis</li>
+                    <li>🧠 <strong>Multi-Step Reasoning</strong> - Iterative problem solving</li>
+                    <li>⚡ <strong>Dynamic Tool Selection</strong> - Chooses optimal tools for each task</li>
+                    <li>🎯 <strong>Goal-Oriented Behavior</strong> - Works towards specific objectives</li>
+                    <li>🏢 <strong>Organizational Analysis</strong> - Cross-repository insights</li>
                 </ul>
             </body>
         </html>
@@ -112,16 +185,39 @@ async def analyze_repository(
         mermaid_diagram = await diagram_generator.generate_mermaid_async(repo_data)
         optimized_diagram = diagram_generator.optimize_for_context(mermaid_diagram)
         
-        # Try to analyze with available AI models
+        # Try autonomous agentic analysis first, fallback to regular analysis
+        analysis = None
+        agentic_success = False
+        
         try:
-            analysis = ai_client.analyze_repository(repo_data, optimized_diagram)
+            if agentic_adapter.orchestrator:
+                logger.info(f"🤖 Using agentic analysis for {repo_name}")
+                agentic_result = await agentic_adapter.analyze_repository_autonomous(repo_name, {
+                    "repo_data": repo_data,
+                    "include_diagram": True
+                })
+                
+                if agentic_result.get("success"):
+                    analysis = agentic_result.get("data", {})
+                    agentic_success = True
+                    logger.info("✅ Agentic analysis completed successfully")
+                else:
+                    logger.warning("⚠️ Agentic analysis failed, falling back to regular analysis")
         except Exception as e:
-            logger.error(f"AI analysis error: {e}")
-            # Handle errors gracefully
-            analysis = {
-                "architecture_summary": "Analysis failed due to an error.",
-                "error": str(e)
-            }
+            logger.warning(f"⚠️ Agentic analysis error, falling back: {e}")
+        
+        # Fallback to regular AI analysis if agentic failed
+        if not agentic_success:
+            try:
+                logger.info(f"🔄 Using regular AI analysis for {repo_name}")
+                analysis = ai_client.analyze_repository(repo_data, optimized_diagram)
+            except Exception as e:
+                logger.error(f"AI analysis error: {e}")
+                # Handle errors gracefully
+                analysis = {
+                    "architecture_summary": "Analysis failed due to an error.",
+                    "error": str(e)
+                }
         
         # Store in knowledge base
         knowledge_base.store_repository(repo_name, repo_data, analysis, optimized_diagram)
@@ -161,7 +257,7 @@ async def suggest_feature_placement(
     repo_name: str = Form(...),
     feature_description: str = Form(...)
 ):
-    """Suggest where to place a new feature"""
+    """Suggest where to place a new feature using agentic workflow when available"""
     
     try:
         # Get repository knowledge
@@ -171,17 +267,38 @@ async def suggest_feature_placement(
             logger.warning(f"Repository {repo_name} not found in knowledge base")
             return {"error": f"Repository {repo_name} not found in knowledge base"}
         
-        # Get suggestions from AI models
-        suggestions = ai_client.suggest_feature_placement(
-            feature_description, knowledge
-        )
+        # Try agentic feature suggestion first
+        suggestions = None
+        agentic_success = False
+        
+        try:
+            if agentic_adapter.orchestrator:
+                logger.info(f"🤖 Using agentic feature suggestion for {repo_name}")
+                agentic_result = await agentic_adapter.suggest_feature_implementation(
+                    feature_description, repo_name
+                )
+                
+                if agentic_result.get("success"):
+                    suggestions = agentic_result.get("data", {}).get("analysis", {}).get("suggestions", [])
+                    agentic_success = True
+                    logger.info("✅ Agentic feature suggestion completed")
+        except Exception as e:
+            logger.warning(f"⚠️ Agentic feature suggestion failed, falling back: {e}")
+        
+        # Fallback to regular AI suggestions
+        if not agentic_success:
+            logger.info(f"🔄 Using regular AI feature suggestion for {repo_name}")
+            suggestions = ai_client.suggest_feature_placement(
+                feature_description, knowledge
+            )
         
         logger.info(f"Feature placement suggestions for {repo_name}: {suggestions}")
         
         return {
             "success": True,
             "feature_description": feature_description,
-            "suggestions": suggestions
+            "suggestions": suggestions,
+            "agentic_analysis": agentic_success
         }
         
     except Exception as e:
@@ -196,6 +313,130 @@ async def list_repositories():
     repos = knowledge_base.list_repositories()
     logger.info(f"Listing analyzed repositories: {repos}")
     return {"repositories": repos}
+
+
+# ==================== AGENTIC ENDPOINTS ====================
+
+@app.post("/api/agentic/analyze/organization/{organization}")
+async def autonomous_analyze_organization(organization: str, options: Optional[Dict[str, Any]] = None):
+    """Autonomously analyze an entire organization using agentic workflow"""
+    try:
+        logger.info(f"🚀 Starting autonomous organization analysis for: {organization}")
+        result = await agentic_adapter.analyze_organization_autonomous(organization, options)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Autonomous organization analysis failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/agentic/analyze/repository/{repo_name}")
+async def autonomous_analyze_repository(repo_name: str, options: Optional[Dict[str, Any]] = None):
+    """Autonomously analyze a single repository using agentic workflow"""
+    try:
+        logger.info(f"🔍 Starting autonomous repository analysis for: {repo_name}")
+        result = await agentic_adapter.analyze_repository_autonomous(repo_name, options)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Autonomous repository analysis failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/agentic/suggest/feature")
+async def autonomous_suggest_feature(request: Dict[str, Any]):
+    """Autonomously suggest feature implementation using agentic workflow"""
+    try:
+        feature_request = request.get("feature_request")
+        repo_name = request.get("repository")
+        
+        if not feature_request:
+            return {"status": "error", "message": "feature_request is required"}
+            
+        logger.info(f"🎯 Starting autonomous feature suggestion: {feature_request}")
+        result = await agentic_adapter.suggest_feature_implementation(feature_request, repo_name)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Autonomous feature suggestion failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/agentic/status")
+async def get_agentic_status():
+    """Get agentic orchestrator status"""
+    try:
+        status = await agentic_adapter.get_orchestrator_status()
+        return {"status": "success", "data": status}
+    except Exception as e:
+        logger.error(f"Failed to get agentic status: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/agentic/analyze/smart")
+async def smart_analyze_with_context(
+    repo_name: str = Form(...),
+    user_request: str = Form(None),
+    analysis_type: str = Form("comprehensive")
+):
+    """Smart analysis that automatically selects the best approach using agentic workflow"""
+    try:
+        logger.info(f"🧠 Starting smart agentic analysis for {repo_name}")
+        
+        # Get repository data
+        repo_data = knowledge_base.get_repository_knowledge(repo_name)
+        if not repo_data:
+            return {"status": "error", "message": f"Repository {repo_name} not found"}
+        
+        # Create autonomous goal based on user request and analysis type
+        if analysis_type == "comprehensive":
+            goal = Goal(
+                goal_id=f"smart_analysis_{repo_name}_{int(datetime.now().timestamp())}",
+                description=f"Comprehensive autonomous analysis of {repo_name}",
+                success_criteria=[
+                    "Repository structure fully analyzed",
+                    "Architectural patterns identified",
+                    "Technology stack mapped",
+                    "Feature recommendations provided",
+                    "Visual diagrams generated",
+                    "Team recommendations delivered"
+                ],
+                context={
+                    "repository": repo_name,
+                    "user_request": user_request,
+                    "analysis_type": analysis_type,
+                    "repo_data": repo_data
+                }
+            )
+        else:
+            goal = Goal(
+                goal_id=f"focused_analysis_{repo_name}_{int(datetime.now().timestamp())}",
+                description=f"Focused analysis of {repo_name} for specific request",
+                success_criteria=[
+                    "User request addressed",
+                    "Relevant analysis completed",
+                    "Actionable recommendations provided"
+                ],
+                context={
+                    "repository": repo_name,
+                    "user_request": user_request,
+                    "analysis_type": analysis_type,
+                    "repo_data": repo_data
+                }
+            )
+        
+        # Execute autonomous analysis
+        if agentic_adapter.orchestrator:
+            result = await agentic_adapter.orchestrator.autonomous_analyze(goal)
+        else:
+            # Fallback to regular analysis
+            result = ai_client.analyze_repository(repo_data, user_request or "")
+            
+        return {"status": "success", "data": result}
+        
+    except Exception as e:
+        logger.error(f"Smart agentic analysis failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ==================== END AGENTIC ENDPOINTS ====================
 
 
 @app.get("/health")
