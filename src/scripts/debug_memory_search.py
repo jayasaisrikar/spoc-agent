@@ -10,7 +10,7 @@ import time
 # Add the current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from conversation_manager import ConversationManager
+from ..ai.conversation_manager import ConversationManager
 
 async def debug_memory_search():
     """Debug memory search with different queries"""

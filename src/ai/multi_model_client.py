@@ -6,7 +6,7 @@ import os
 from typing import Dict, Any, Optional
 import google.generativeai as genai
 from openai import OpenAI
-from prompt_cache import PromptCache
+from ..utils.prompt_cache import PromptCache
 
 
 class MultiModelClient:

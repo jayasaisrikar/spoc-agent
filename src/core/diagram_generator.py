@@ -1,5 +1,5 @@
 from typing import Dict
-from gitdiagram_core import GitDiagramCore
+from .gitdiagram_core import GitDiagramCore
 
 
 class DiagramGenerator:

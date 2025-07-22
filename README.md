@@ -38,7 +38,7 @@ This agent leverages advanced AI models (Gemini, OpenAI, Azure OpenAI) to unders
 
 - **🔍 Repository Analysis**: Deep analysis of GitHub repositories via ZIP upload or URL
 - **🤖 Multi-Model AI**: Automatic fallback between Gemini, OpenAI, and Azure OpenAI
-- **🧠 Conversation Memory**: Persistent memory system using Mem0 for personalized interactions
+- **🧠 Conversation Memory**: Persistent memory system using Mem0 that learns from every interaction and provides context-aware responses
 - **📊 Architecture Visualization**: Generates Mermaid.js diagrams for system understanding
 - **💾 Knowledge Base**: SQLite-based storage for repository insights and conversation history
 - **🎯 Smart Feature Placement**: Precise recommendations for implementing new features
@@ -65,7 +65,7 @@ This agent leverages advanced AI models (Gemini, OpenAI, Azure OpenAI) to unders
 ### Core Dependencies
 - `fastapi>=0.116.0` - High-performance web framework
 - `google-generativeai>=0.3.1` - Gemini AI integration
-- `mem0ai>=0.1.114` - Long-term memory system
+- `mem0ai>=0.1.114` - Long-term memory system for persistent AI conversations
 - `openai>=1.0.0` - OpenAI API client
 - `PyGithub==1.59.1` - GitHub API integration
 - `python-multipart==0.0.6` - File upload support
@@ -173,18 +173,37 @@ curl -X POST "http://localhost:8000/chat-with-memory" \
 
 ## 🧠 Memory System (Mem0 Integration)
 
+**What is Mem0?**
+[Mem0](https://github.com/mem0ai/mem0) is a powerful memory layer for AI applications that enables persistent, context-aware conversations. Unlike traditional chatbots that forget previous interactions, Mem0 creates a long-term memory system that learns from every conversation.
+
+**How Mem0 Works:**
+- **Vector Storage**: Stores conversation history and context in a vector database
+- **Semantic Search**: Retrieves relevant memories based on meaning, not just keywords  
+- **Personalization**: Learns user preferences, coding patterns, and project-specific context
+- **Cross-Session Memory**: Maintains context across different conversation sessions
+
+**In This Agent:**
 The agent includes a sophisticated memory system that:
 
 - **Remembers Preferences**: Your coding style, preferred frameworks, and architectural patterns
-- **Maintains Context**: Conversation history across sessions
-- **Personalizes Responses**: Tailored suggestions based on past interactions
-- **Project-Specific Memory**: Different contexts for different repositories
+- **Maintains Context**: Conversation history across sessions for each repository
+- **Personalizes Responses**: Tailored suggestions based on past interactions and learned preferences
+- **Project-Specific Memory**: Different memory contexts for different repositories
+- **Learning Capability**: Improves recommendations over time based on your feedback
 
 ### Memory Features
-- User preference learning
-- Project-specific context retention
-- Cross-session conversation continuity
-- Intelligent context retrieval
+- **User Preference Learning**: Adapts to your coding style and technology preferences
+- **Project-Specific Context**: Separate memory contexts for different codebases
+- **Cross-Session Continuity**: Remembers conversations even after restarting the application
+- **Intelligent Context Retrieval**: Automatically finds relevant past discussions when analyzing new code
+- **Feedback Integration**: Learns from your feedback to improve future suggestions
+
+### Getting Started with Mem0
+For a hands-on demonstration of Mem0 integration, see the [Mem0 Demo Notebook](./mem0_demo.ipynb) which shows how to:
+- Set up Mem0 with Google Gemini
+- Store and retrieve conversation memories
+- Implement project-specific memory contexts
+- Use memory for enhanced code analysis
 
 ## 📊 Core Components
 

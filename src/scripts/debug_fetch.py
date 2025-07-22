@@ -4,8 +4,8 @@ Debug repository file fetching issue
 """
 import os
 from dotenv import load_dotenv
-from repo_handler import RepoHandler
-from knowledge_base import KnowledgeBase
+from ..core.repo_handler import RepoHandler
+from ..data.knowledge_base import KnowledgeBase
 
 def main():
     load_dotenv()
