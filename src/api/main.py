@@ -38,11 +38,19 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Code Architecture Agent")
 
-# Add CORS middleware for frontend
+# Add CORS middleware for frontend (driven by env)
+_default_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+]
+_frontend_url = os.getenv("FRONTEND_URL")
+_extra_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+_allow_origins = _default_origins + ([_frontend_url] if _frontend_url else []) + _extra_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000",
-                   "http://localhost:3001"],
+    allow_origins=_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,8 +62,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Initialize components
 repo_handler = RepoHandler(os.getenv("GITHUB_TOKEN"))
-diagram_generator = DiagramGenerator()  # No longer needs gitdiagram path
-ai_client = MultiModelClient()  # Multi-model client for robust AI access
+diagram_generator = DiagramGenerator()
+ai_client = MultiModelClient()
 knowledge_base = KnowledgeBase()
 
 # Initialize conversation manager
