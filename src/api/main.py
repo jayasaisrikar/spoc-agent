@@ -20,7 +20,8 @@ import os
 from dotenv import load_dotenv
 import sqlite3
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+import re
 
 load_dotenv()
 
@@ -562,7 +563,8 @@ def _get_health_recommendations(models: list, error_summary: dict) -> list:
 @app.post("/ask-question")
 async def ask_question(
     question: str = Form(...),
-    repo_context: str = Form(None)
+    repo_context: str = Form(None),
+    repo_contexts: str = Form(None)
 ):
     """
     Ask a question about a previously analyzed repository
@@ -570,9 +572,135 @@ async def ask_question(
     try:
         logger.info(f"Received question: {question}")
         logger.info(f"Received repository context: {repo_context}")
-        
-        # Get the last analyzed repository data from knowledge base
-        if repo_context and knowledge_base.has_repository(repo_context):
+        logger.info(f"Received repository contexts: {repo_contexts}")
+
+        # Parse multi-repo contexts if provided
+        contexts: List[str] = []
+        if repo_contexts:
+            try:
+                parsed = json.loads(repo_contexts)
+                if isinstance(parsed, list):
+                    contexts = [str(x) for x in parsed]
+            except Exception:
+                # Fallback: comma or space separated
+                contexts = [c for c in re.split(r"[,\s]+", repo_contexts) if c]
+
+        if not contexts and repo_context:
+            contexts = [repo_context]
+
+        valid_repos: List[str] = [r for r in contexts if knowledge_base.has_repository(r)]
+
+        # If multiple valid repos provided, build a blended context
+        if len(valid_repos) > 1:
+            all_repos_knowledge = knowledge_base.get_all_repositories_knowledge()
+            org_patterns = knowledge_base.get_organization_patterns()
+
+            # Collect conversation and memory per repo
+            conversation_sections = []
+            memory_sections = []
+            files_sections = []
+            diagrams_sections = []
+
+            # Limit total files across repos to avoid token blow-up
+            max_total_files = 40
+            per_repo_limit = max(8, max_total_files // len(valid_repos))
+            important_extensions = ('.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.go', '.rs', '.php', '.rb', '.json', '.yaml', '.yml', '.toml', '.md', '.txt', '.html', '.css', '.scss', '.sql')
+            config_files = ('package.json', 'requirements.txt', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle', 'tsconfig.json', 'dockerfile', 'docker-compose.yml', '.env.example', 'readme.md', 'license', 'makefile')
+
+            for rname in valid_repos:
+                repo_knowledge = knowledge_base.get_repository_knowledge(rname)
+                # Conversation history
+                conv = conversation_manager.format_conversation_for_ai(rname)
+                if conv:
+                    conversation_sections.append(f"**Conversation ({rname}):**\n{conv}")
+
+                # Memory context
+                mem_section = ""
+                if conversation_manager.memory_manager:
+                    related_memories = conversation_manager.memory_manager.search_memories(
+                        query=question,
+                        user_id=f"repo_{rname}",
+                        limit=6
+                    )
+                    if related_memories:
+                        mem_section = "\n".join([f"- {m.get('memory','')}" for m in related_memories if m.get('memory')])
+                if mem_section:
+                    memory_sections.append(f"**Memories ({rname}):**\n{mem_section}")
+
+                # Files and structure
+                file_contents = repo_knowledge.get('file_contents', {})
+                file_structure = repo_knowledge.get('file_structure', [])
+                files_block = ["**File Tree:**"] + [f"- {p}" for p in sorted(file_structure)[:200]]
+                files_block.append("\n**File Contents (important excerpts):**")
+                selected = 0
+                for fpath, finfo in file_contents.items():
+                    if selected >= per_repo_limit:
+                        break
+                    if (fpath.lower().endswith(important_extensions) or any(cfg.lower() in fpath.lower() for cfg in config_files)):
+                        content = finfo.get('content', '')[:1500]
+                        ftype = finfo.get('type', 'unknown')
+                        files_block.append(f"\n--- {fpath} ({ftype}) ---\n{content}")
+                        selected += 1
+                files_sections.append(f"**Repository ({rname}) Files:**\n" + "\n".join(files_block))
+
+                # Diagrams
+                diag = repo_knowledge.get('mermaid_diagram') or ''
+                if diag:
+                    diagrams_sections.append(f"**System Diagram ({rname}):**\n```mermaid\n{diag}\n```")
+
+            prompt = f"""
+You are analyzing a user question across multiple related repositories in the same organization.
+
+Repositories involved: {', '.join(valid_repos)}
+
+Question:
+{question}
+
+ORGANIZATION-WIDE CONTEXT:
+- Total repositories: {len(all_repos_knowledge)}
+- Common Languages: {', '.join([f"{lang} ({count} repos)" for lang, count in list(org_patterns['languages'].items())[:5]])}
+- Common Frameworks: {', '.join([f"{fw} ({count} repos)" for fw, count in list(org_patterns['frameworks'].items())[:5]])}
+- File Extensions Used: {', '.join([f".{ext} ({count} files)" for ext, count in list(org_patterns['file_patterns'].items())[:10]])}
+
+CONVERSATION HISTORY:
+{chr(10).join(conversation_sections) if conversation_sections else 'None'}
+
+MEMORY CONTEXT:
+{chr(10).join(memory_sections) if memory_sections else 'None'}
+
+REPOSITORY CONTEXTS (files and structure):
+{chr(10).join(files_sections)}
+
+DIAGRAMS:
+{chr(10).join(diagrams_sections) if diagrams_sections else 'None'}
+
+Instructions:
+1. Provide a unified answer that references the specific repositories by name where relevant.
+2. Call out integration points between these repos (APIs, events, contracts, shared types).
+3. When suggesting implementation, indicate exact files and locations per repo following their patterns.
+4. Note differences in stack or conventions and recommend consistent org-wide patterns where helpful.
+5. Keep it concise, structured, and avoid repeating the same info for each repo unless necessary.
+"""
+
+            response = await ai_client.generate_response(prompt)
+
+            # Add messages to each involved repo conversation
+            for rname in valid_repos:
+                conversation_manager.add_message(rname, 'user', question)
+                conversation_manager.add_message(rname, 'assistant', response)
+
+            logger.info(f"Question answered with multi-repo context for {', '.join(valid_repos)}")
+
+            return {
+                "success": True,
+                "message": "Question answered with multi-repo context",
+                "analysis_summary": response,
+                "repo_contexts": valid_repos
+            }
+
+        # Single repository path (backward-compatible)
+        if contexts and len(valid_repos) == 1:
+            repo_context = valid_repos[0]
             repo_knowledge = knowledge_base.get_repository_knowledge(repo_context)
             # ALSO get all repositories for cross-repo context
             all_repos_knowledge = knowledge_base.get_all_repositories_knowledge()

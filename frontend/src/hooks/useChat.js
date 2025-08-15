@@ -208,13 +208,14 @@ export const useChat = () => {
     }])
   }, [])
 
-  const sendMessage = useCallback(async (content = input) => {
+  const sendMessage = useCallback(async (content = input, repoOverride = null, repoOverrides = null, originalContent = null) => {
     if (!content.trim() || isLoading) return
 
     const startTime = Date.now()
     const userMessage = {
       type: 'user',
-      content: content.trim()
+      // Show exactly what the user typed (with tags) in the UI, but send cleaned content to backend
+      content: (originalContent ?? content).trim()
     }
 
     addMessage(userMessage)
@@ -232,11 +233,29 @@ export const useChat = () => {
       addMessage(thinkingMessage)
 
       // Use active repository (or fallback to most recent) to provide context-aware responses
-      const repoNameForQuestion = activeRepoName || (repositories.length > 0 ? repositories[repositories.length - 1].name : null)
+      // Prefer explicit repoOverrides (array) if provided; fallback to detection from content
+      let matchedRepos = Array.isArray(repoOverrides) ? [...repoOverrides] : []
+      if (matchedRepos.length === 0) {
+        const tagMatches = Array.from((content.match(/(^|\s)([#@])([\w.-]{2,})\b/g) || []).values())
+        for (const token of tagMatches) {
+          const m = token.match(/[#@]([\w.-]{2,})/)
+          if (m) {
+            const candidate = m[1]
+            const found = repositories.find(r => r.name.toLowerCase().includes(candidate.toLowerCase()))
+            if (found && !matchedRepos.includes(found.name)) matchedRepos.push(found.name)
+          }
+        }
+      }
+
+      const repoNameForQuestion = repoOverride || activeRepoName || (repositories.length > 0 ? repositories[repositories.length - 1].name : null)
       if (repoNameForQuestion) {
         const formData = new FormData()
         formData.append('question', content.trim())
-        formData.append('repo_context', repoNameForQuestion)
+        if (matchedRepos.length > 1) {
+          formData.append('repo_contexts', JSON.stringify(matchedRepos))
+        } else {
+          formData.append('repo_context', matchedRepos[0] || repoNameForQuestion)
+        }
         formData.append('session_id', sessionId)
 
         const data = await apiFetch(`/ask-question`, {
@@ -246,14 +265,16 @@ export const useChat = () => {
         const endTime = Date.now()
         const thinkingTime = ((endTime - startTime) / 1000).toFixed(1)
 
-        setMessages(prev => {
+    setMessages(prev => {
           const filtered = prev.filter(m => !m.isThinking)
           return [...filtered, {
             id: Date.now().toString(),
             type: 'assistant',
             content: formatAnalysisResults(data),
             timestamp: new Date().toISOString(),
-            thinkingTime: `${thinkingTime}s`
+      thinkingTime: `${thinkingTime}s`,
+      repoContext: data?.repo_context || undefined,
+      repoContexts: data?.repo_contexts || undefined
           }]
         })
       } else {

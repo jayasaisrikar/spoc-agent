@@ -112,6 +112,26 @@ const ChatMessage = ({ message, onQuoteMessage }) => {
             </div>
           )}
 
+          {/* Repo context badge for assistant messages */}
+          {!isUser && !message.isThinking && (message.repoContexts?.length || message.repoContext) && (
+            <div className="mb-1">
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300 border border-gray-200 dark:border-gray-800">
+                Using repos:
+                {message.repoContexts?.length ? (
+                  <>
+                    {message.repoContexts.map((r, i) => (
+                      <span key={r} className="font-medium">
+                        {i > 0 ? ', ' : ''}{r}
+                      </span>
+                    ))}
+                  </>
+                ) : (
+                  <span className="font-medium">{message.repoContext}</span>
+                )}
+              </span>
+            </div>
+          )}
+
           <div className={`rounded-xl ${
             isUser 
               ? 'bg-gray-900 text-white px-4 py-3' 
@@ -126,7 +146,7 @@ const ChatMessage = ({ message, onQuoteMessage }) => {
               </div>
             ) : (
               <div className={`prose prose-sm max-w-none w-full ${
-                isUser ? 'prose-invert' : 'prose-gray dark:prose-invert-0'
+                isUser ? 'prose-invert' : 'prose-gray dark:prose-invert'
               }`}>
                 <ReactMarkdown
                   components={{
@@ -223,54 +243,54 @@ const ChatMessage = ({ message, onQuoteMessage }) => {
                     },
                     h1: ({children}) => (
                       <h1 className={`text-xl font-semibold mb-3 mt-4 first:mt-0 ${
-                        isUser ? 'text-white' : 'text-gray-900'
+                        isUser ? 'text-white' : 'text-gray-900 dark:text-gray-100'
                       }`}>
                         {children}
                       </h1>
                     ),
                     h2: ({children}) => (
                       <h2 className={`text-lg font-semibold mb-2 mt-4 first:mt-0 ${
-                        isUser ? 'text-gray-100' : 'text-gray-800'
+                        isUser ? 'text-gray-100' : 'text-gray-800 dark:text-gray-100'
                       }`}>
                         {children}
                       </h2>
                     ),
                     h3: ({children}) => (
                       <h3 className={`text-base font-semibold mb-2 mt-3 first:mt-0 ${
-                        isUser ? 'text-gray-200' : 'text-gray-700'
+                        isUser ? 'text-gray-200' : 'text-gray-700 dark:text-gray-200'
                       }`}>
                         {children}
                       </h3>
                     ),
                     p: ({children}) => (
                       <p className={`mb-3 leading-relaxed first:mt-0 ${
-                        isUser ? 'text-gray-100' : 'text-gray-700'
+                        isUser ? 'text-gray-100' : 'text-gray-700 dark:text-gray-200'
                       }`}>
                         {children}
                       </p>
                     ),
                     ul: ({children}) => (
                       <ul className={`list-disc list-inside mb-3 space-y-1 pl-2 ${
-                        isUser ? 'text-gray-100' : 'text-gray-700'
+                        isUser ? 'text-gray-100' : 'text-gray-700 dark:text-gray-200'
                       }`}>
                         {children}
                       </ul>
                     ),
                     ol: ({children}) => (
                       <ol className={`list-decimal list-inside mb-3 space-y-1 pl-2 ${
-                        isUser ? 'text-gray-100' : 'text-gray-700'
+                        isUser ? 'text-gray-100' : 'text-gray-700 dark:text-gray-200'
                       }`}>
                         {children}
                       </ol>
                     ),
                     li: ({children}) => (
-                      <li className={isUser ? 'text-gray-100' : 'text-gray-700'}>
+                      <li className={isUser ? 'text-gray-100' : 'text-gray-700 dark:text-gray-200'}>
                         {children}
                       </li>
                     ),
                     strong: ({children}) => (
                       <strong className={`font-semibold ${
-                        isUser ? 'text-white' : 'text-gray-900'
+                        isUser ? 'text-white' : 'text-gray-900 dark:text-gray-100'
                       }`}>
                         {children}
                       </strong>
@@ -279,7 +299,7 @@ const ChatMessage = ({ message, onQuoteMessage }) => {
                       <blockquote className={`border-l-4 pl-4 py-2 my-3 rounded-r-lg ${
                         isUser 
                           ? 'border-gray-500 bg-gray-800 text-gray-200' 
-                          : 'border-gray-300 bg-gray-50 text-gray-700'
+                          : 'border-gray-300 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200'
                       }`}>
                         {children}
                       </blockquote>
@@ -288,7 +308,7 @@ const ChatMessage = ({ message, onQuoteMessage }) => {
                       <a 
                         href={href} 
                         className={`underline hover:no-underline transition-colors ${
-                          isUser ? 'text-gray-200' : 'text-gray-900'
+                          isUser ? 'text-gray-200' : 'text-gray-900 dark:text-gray-100'
                         }`}
                         target="_blank" 
                         rel="noopener noreferrer"
@@ -299,7 +319,7 @@ const ChatMessage = ({ message, onQuoteMessage }) => {
                     table: ({children}) => (
                       <div className="overflow-x-auto my-3">
                         <table className={`min-w-full border-collapse border ${
-                          isUser ? 'border-gray-600' : 'border-gray-200'
+                          isUser ? 'border-gray-600' : 'border-gray-200 dark:border-gray-800'
                         }`}>
                           {children}
                         </table>
@@ -309,7 +329,7 @@ const ChatMessage = ({ message, onQuoteMessage }) => {
                       <th className={`border px-3 py-2 text-left font-semibold ${
                         isUser 
                           ? 'border-gray-600 bg-gray-700 text-gray-200' 
-                          : 'border-gray-200 bg-gray-50 text-gray-700'
+                          : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200'
                       }`}>
                         {children}
                       </th>
@@ -318,7 +338,7 @@ const ChatMessage = ({ message, onQuoteMessage }) => {
                       <td className={`border px-3 py-2 ${
                         isUser 
                           ? 'border-gray-600 text-gray-200' 
-                          : 'border-gray-200 text-gray-700'
+                          : 'border-gray-200 text-gray-700 dark:border-gray-800 dark:text-gray-200'
                       }`}>
                         {children}
                       </td>

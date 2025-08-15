@@ -58,7 +58,7 @@ const Header = ({
       initial={{ y: -64 }}
       animate={{ y: 0 }}
       transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-      className="fixed top-0 z-30 bg-white/95 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 h-16 transition-all duration-300 ease-in-out"
+  className="fixed top-0 z-40 bg-white/95 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 h-16 transition-all duration-300 ease-in-out"
       style={{
         left: sidebarOpen ? '320px' : '0',
         right: '0',
@@ -143,7 +143,7 @@ const Header = ({
               <ChevronDown className="w-4 h-4" />
             </button>
             {repoMenuOpen && (
-              <div className="absolute right-0 mt-1 w-64 max-h-72 overflow-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg z-50">
+              <div className="absolute right-0 mt-1 w-64 max-h-72 overflow-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg z-[100]">
                 <div className="py-1 text-sm">
                   {repositories.length === 0 && (
                     <div className="px-3 py-2 text-gray-500 dark:text-gray-400">No repositories yet</div>
