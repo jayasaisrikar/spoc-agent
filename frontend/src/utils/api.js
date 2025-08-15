@@ -1,13 +1,35 @@
 // Centralized API utilities
 
 const getBaseUrl = () => {
-  // Prefer Vite env if present, else fall back to window location with default port
+  // 1) Prefer Vite env at build time
   const envUrl = import.meta?.env?.VITE_API_BASE_URL
   if (envUrl) return envUrl
-  // Fallback for local dev
+
+  // 2) Optional runtime override (can be injected before scripts)
+  if (typeof window !== 'undefined' && window.__API_BASE_URL__) {
+    return window.__API_BASE_URL__
+  }
+
+  // 3) Optional meta tag override in index.html
+  if (typeof document !== 'undefined') {
+    const meta = document.querySelector('meta[name="api-base-url"]')
+    if (meta?.content) return meta.content
+  }
+
+  // 4) Fallbacks
   const { protocol, hostname } = window.location
-  const port = '8000'
-  return `${protocol}//${hostname}:${port}`
+  // Only force :8000 for local dev
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return `${protocol}//${hostname}:8000`
+  }
+
+  // 5) As a last resort, same-origin (requires rewrites/proxy)
+  if (import.meta?.env?.MODE === 'production') {
+    // Warn once in production if no env is set
+    // eslint-disable-next-line no-console
+    console.warn('[API] VITE_API_BASE_URL is not set; falling back to same-origin. Configure it in Vercel envs.')
+  }
+  return `${protocol}//${hostname}`
 }
 
 export const API_BASE_URL = getBaseUrl()
