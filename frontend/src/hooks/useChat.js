@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-
-const API_BASE_URL = 'http://localhost:8000'
+import { API_BASE_URL, apiFetch } from '../utils/api'
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -61,6 +60,11 @@ export const useChat = () => {
     return storage.load(STORAGE_KEYS.REPOSITORIES, [])
   })
 
+  // Track which repository is the current active context
+  const [activeRepoName, setActiveRepoName] = useState(() => {
+    return storage.load('active_repo_name', null)
+  })
+
   // Generate unique session ID for better organization
   const [sessionId] = useState(() => {
     return storage.load('current_session_id', `session_${Date.now()}`)
@@ -70,6 +74,12 @@ export const useChat = () => {
   useEffect(() => {
     storage.save('current_session_id', sessionId)
   }, [sessionId])
+
+  // Persist active repository selection
+  useEffect(() => {
+  // Persist even if null to avoid stale values
+  storage.save('active_repo_name', activeRepoName)
+  }, [activeRepoName])
 
   // Enhanced message saving with session metadata
   useEffect(() => {
@@ -118,9 +128,8 @@ export const useChat = () => {
       setIsSaving(false)
     }
     
-    if (repositories.length > 0) {
-      saveRepositories()
-    }
+  // Always persist, even when empty (to clear prior state)
+  saveRepositories()
   }, [repositories])
 
   // Clear all chat data
@@ -131,6 +140,7 @@ export const useChat = () => {
     storage.remove(STORAGE_KEYS.REPOSITORIES)
     storage.remove(STORAGE_KEYS.CHAT_SESSIONS)
     storage.remove('current_session_id')
+  storage.remove('active_repo_name')
   }, [])
 
   // Start a new chat while preserving repositories
@@ -198,13 +208,14 @@ export const useChat = () => {
     }])
   }, [])
 
-  const sendMessage = useCallback(async (content = input) => {
+  const sendMessage = useCallback(async (content = input, repoOverride = null, repoOverrides = null, originalContent = null) => {
     if (!content.trim() || isLoading) return
 
     const startTime = Date.now()
     const userMessage = {
       type: 'user',
-      content: content.trim()
+      // Show exactly what the user typed (with tags) in the UI, but send cleaned content to backend
+      content: (originalContent ?? content).trim()
     }
 
     addMessage(userMessage)
@@ -221,32 +232,49 @@ export const useChat = () => {
       }
       addMessage(thinkingMessage)
 
-      // Check if we have any repositories analyzed to provide context-aware responses
-      if (repositories.length > 0) {
-        // Try to provide intelligent responses based on the last analyzed repository
-        const lastRepo = repositories[repositories.length - 1]
-        
+      // Use active repository (or fallback to most recent) to provide context-aware responses
+      // Prefer explicit repoOverrides (array) if provided; fallback to detection from content
+      let matchedRepos = Array.isArray(repoOverrides) ? [...repoOverrides] : []
+      if (matchedRepos.length === 0) {
+        const tagMatches = Array.from((content.match(/(^|\s)([#@])([\w.-]{2,})\b/g) || []).values())
+        for (const token of tagMatches) {
+          const m = token.match(/[#@]([\w.-]{2,})/)
+          if (m) {
+            const candidate = m[1]
+            const found = repositories.find(r => r.name.toLowerCase().includes(candidate.toLowerCase()))
+            if (found && !matchedRepos.includes(found.name)) matchedRepos.push(found.name)
+          }
+        }
+      }
+
+      const repoNameForQuestion = repoOverride || activeRepoName || (repositories.length > 0 ? repositories[repositories.length - 1].name : null)
+      if (repoNameForQuestion) {
         const formData = new FormData()
         formData.append('question', content.trim())
-        formData.append('repo_context', lastRepo.name)
+        if (matchedRepos.length > 1) {
+          formData.append('repo_contexts', JSON.stringify(matchedRepos))
+        } else {
+          formData.append('repo_context', matchedRepos[0] || repoNameForQuestion)
+        }
+        formData.append('session_id', sessionId)
 
-        const response = await fetch(`${API_BASE_URL}/ask-question`, {
+        const data = await apiFetch(`/ask-question`, {
           method: 'POST',
           body: formData
         })
-
-        const data = await response.json()
         const endTime = Date.now()
         const thinkingTime = ((endTime - startTime) / 1000).toFixed(1)
 
-        setMessages(prev => {
+    setMessages(prev => {
           const filtered = prev.filter(m => !m.isThinking)
           return [...filtered, {
             id: Date.now().toString(),
             type: 'assistant',
             content: formatAnalysisResults(data),
             timestamp: new Date().toISOString(),
-            thinkingTime: `${thinkingTime}s`
+      thinkingTime: `${thinkingTime}s`,
+      repoContext: data?.repo_context || undefined,
+      repoContexts: data?.repo_contexts || undefined
           }]
         })
       } else {
@@ -280,7 +308,7 @@ export const useChat = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, addMessage, repositories])
+  }, [input, isLoading, addMessage, repositories, activeRepoName, sessionId])
 
   const analyzeRepository = useCallback(async (repoUrl) => {
     const startTime = Date.now()
@@ -307,16 +335,10 @@ export const useChat = () => {
       const repoName = urlParts.length >= 2 ? `${urlParts[0]}-${urlParts[1]}` : (repoUrl.split('/').pop() || 'unknown-repo')
       formData.append('repo_name', repoName)
 
-      const response = await fetch(`${API_BASE_URL}/analyze-repo`, {
+      const data = await apiFetch(`/analyze-repo`, {
         method: 'POST',
         body: formData
       })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
       const endTime = Date.now()
       const thinkingTime = ((endTime - startTime) / 1000).toFixed(1)
       
@@ -334,20 +356,22 @@ export const useChat = () => {
       })
 
       // Update repositories list
-      if (data.success) {
+  if (data.success) {
         setRepositories(prev => {
           const exists = prev.find(repo => repo.url === repoUrl)
           if (!exists) {
             const urlParts = repoUrl.replace(/https?:\/\/github\.com\//, '').split('/')
             const repoName = urlParts.length >= 2 ? `${urlParts[0]}-${urlParts[1]}` : (repoUrl.split('/').pop() || 'unknown-repo')
-            return [...prev, {
+    const updated = [...prev, {
               id: Date.now().toString(),
               url: repoUrl,
               name: repoName,
               analyzedAt: new Date().toISOString(),
               type: 'github',
               description: data.message || 'Repository analyzed successfully'
-            }]
+    }]
+    setActiveRepoName(repoName)
+    return updated
           }
           return prev
         })
@@ -356,13 +380,15 @@ export const useChat = () => {
         setRepositories(prev => {
           const exists = prev.find(repo => repo.url === repoUrl)
           if (!exists) {
-            return [...prev, {
+    const updated = [...prev, {
               id: Date.now().toString(),
               url: repoUrl,
               name: data.repository_info.name || repoUrl.split('/').pop(),
               analyzedAt: new Date().toISOString(),
               ...data.repository_info
-            }]
+    }]
+    setActiveRepoName(data.repository_info.name || repoUrl.split('/').pop())
+    return updated
           }
           return prev
         })
@@ -426,16 +452,10 @@ export const useChat = () => {
       const repoName = file.name.replace(/\.[^/.]+$/, "") || 'uploaded-repo'
       formData.append('repo_name', repoName)
 
-      const response = await fetch(`${API_BASE_URL}/analyze-repo`, {
+      const data = await apiFetch(`/analyze-repo`, {
         method: 'POST',
         body: formData
       })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
       
       // Remove thinking message and add results
       setMessages(prev => {
@@ -449,18 +469,20 @@ export const useChat = () => {
         }]
       })
 
-      // Update repositories list
+  // Update repositories list
       if (data.repository_info) {
         setRepositories(prev => {
           const exists = prev.find(repo => repo.name === file.name)
           if (!exists) {
-            return [...prev, {
+    const updated = [...prev, {
               id: Date.now().toString(),
               name: file.name,
               type: 'upload',
               analyzedAt: new Date().toISOString(),
               ...data.repository_info
-            }]
+    }]
+    setActiveRepoName(file.name)
+    return updated
           }
           return prev
         })
@@ -498,23 +520,17 @@ export const useChat = () => {
     })
 
     try {
-      // Use the most recent repository if available
-      const repoName = repositories.length > 0 ? repositories[repositories.length - 1].name : 'unknown-repo'
+  // Use the active repository if available
+  const repoName = activeRepoName || (repositories.length > 0 ? repositories[repositories.length - 1].name : 'unknown-repo')
       
       const formData = new FormData()
       formData.append('feature_description', featureDescription)
       formData.append('repo_name', repoName)
 
-      const response = await fetch(`${API_BASE_URL}/suggest-feature`, {
+      const data = await apiFetch(`/suggest-feature`, {
         method: 'POST',
         body: formData
       })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
       
       // Remove thinking message and add results
       setMessages(prev => {
@@ -550,14 +566,12 @@ export const useChat = () => {
     try {
       setIsLoading(true)
       
-      const response = await fetch(`${API_BASE_URL}/api/conversations/${encodeURIComponent(repoName)}/switch`, {
+      const data = await apiFetch(`/api/conversations/${encodeURIComponent(repoName)}/switch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         }
       })
-      
-      const data = await response.json()
       
       if (data.success) {
         // Transform backend messages to frontend format
@@ -580,14 +594,25 @@ export const useChat = () => {
           })
         }
         
-        // Update the current conversation
+  // Update the current conversation
         setMessages(transformedMessages)
         setInput('') // Clear any existing input
+  setActiveRepoName(repoName)
         
         // Save the updated conversation to localStorage
         storage.save(STORAGE_KEYS.MESSAGES, transformedMessages)
         
-        addMessage('system', `Switched to ${repoName} conversation`, { repo_name: repoName })
+        // Add a lightweight system message at the end
+        setMessages(prev => ([
+          ...prev,
+          {
+            id: `${repoName}_${Date.now()}`,
+            type: 'assistant',
+            content: `Switched to ${repoName} conversation`,
+            timestamp: new Date().toISOString(),
+            metadata: { repo_name: repoName, system: true }
+          }
+        ]))
         
         return { success: true, repo_name: repoName }
       } else {
@@ -595,7 +620,16 @@ export const useChat = () => {
       }
     } catch (error) {
       console.error('Error switching conversation:', error)
-      addMessage('system', `Failed to switch to ${repoName}: ${error.message}`, { error: true })
+      setMessages(prev => ([
+        ...prev,
+        {
+          id: `${repoName}_error_${Date.now()}`,
+          type: 'assistant',
+          content: `Failed to switch to ${repoName}: ${error.message}`,
+          timestamp: new Date().toISOString(),
+          isError: true
+        }
+      ]))
       return { success: false, error: error.message }
     } finally {
       setIsLoading(false)
@@ -614,6 +648,8 @@ export const useChat = () => {
     analyzeFile,
     suggestFeature,
     repositories,
+  activeRepoName,
+  setActiveRepoName,
     clearChatHistory,
     newChat,
     exportChatData,
