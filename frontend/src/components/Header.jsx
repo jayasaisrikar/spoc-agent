@@ -80,7 +80,7 @@ const Header = ({
               <Brain className="w-4 h-4 text-white dark:text-gray-100" />
             </div>
             <div>
-              <h1 className="text-lg font-medium text-gray-900 dark:text-gray-100">Drishya Developers SPoC</h1>
+              <h1 className="text-lg font-medium text-gray-900 dark:text-gray-100">Developers SPoC</h1>
               <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">Architecture Analysis</p>
             </div>
           </div>
