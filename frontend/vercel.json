@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    { "source": "/health", "destination": "https://spoc-agent.onrender.com/health" },
+    { "source": "/ask-question", "destination": "https://spoc-agent.onrender.com/ask-question" },
+    { "source": "/analyze-repo", "destination": "https://spoc-agent.onrender.com/analyze-repo" },
+    { "source": "/suggest-feature", "destination": "https://spoc-agent.onrender.com/suggest-feature" },
+    { "source": "/analyze-repo-with-memory", "destination": "https://spoc-agent.onrender.com/analyze-repo-with-memory" },
+    { "source": "/suggest-feature-with-memory", "destination": "https://spoc-agent.onrender.com/suggest-feature-with-memory" },
+    { "source": "/memory-search", "destination": "https://spoc-agent.onrender.com/memory-search" },
+    { "source": "/repositories", "destination": "https://spoc-agent.onrender.com/repositories" },
+    { "source": "/conversation/:path*", "destination": "https://spoc-agent.onrender.com/conversation/:path*" },
+    { "source": "/api/:path*", "destination": "https://spoc-agent.onrender.com/api/:path*" }
+  ]
+}
