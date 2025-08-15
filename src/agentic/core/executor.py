@@ -207,8 +207,26 @@ class TaskExecutor:
             if not repo_data and repo_name != 'unknown':
                 repo_data = self.knowledge_base.get_repository_knowledge(repo_name)
             
-            # Use AI client to analyze structure
-            analysis = self.ai_client.analyze_repository(repo_data, "")
+            # Prepare auxiliary context (diagram) if available
+            mermaid_diagram = ""
+            try:
+                # Prefer existing diagram from knowledge base to avoid regeneration
+                existing = None
+                if isinstance(repo_data, dict):
+                    existing = repo_data.get('mermaid_diagram')
+                if existing:
+                    mermaid_diagram = existing.strip()
+                    if self.diagram_generator and mermaid_diagram:
+                        mermaid_diagram = self.diagram_generator.optimize_for_context(mermaid_diagram)
+                elif self.diagram_generator and repo_data:
+                    mermaid_raw = await self.diagram_generator.generate_mermaid_async(repo_data)
+                    mermaid_diagram = self.diagram_generator.optimize_for_context(mermaid_raw)
+            except Exception as e:
+                logger.warning(f"Diagram generation failed, continuing without diagram: {e}")
+                mermaid_diagram = ""
+            
+            # Use AI client to analyze structure with diagram context
+            analysis = self.ai_client.analyze_repository(repo_data, mermaid_diagram)
             
             # Extract components and patterns
             components = analysis.get('components', [])

@@ -47,17 +47,17 @@ const Toast = ({ toast, onClose }) => {
       initial={{ opacity: 0, y: 50, scale: 0.3 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 20, scale: 0.5 }}
-      className={`flex items-start gap-3 p-4 rounded-lg border shadow-lg ${getBackgroundColor()}`}
+  className={`flex items-start gap-3 p-4 rounded-lg border shadow-lg ${getBackgroundColor()} dark:bg-gray-900 dark:border-gray-800`}
     >
       {getIcon()}
       <div className="flex-1 min-w-0">
-        <p className={`text-sm ${getTextColor()}`}>{toast.message}</p>
+  <p className={`text-sm ${getTextColor()} dark:text-gray-100`}>{toast.message}</p>
       </div>
       <button
         onClick={() => onClose(toast.id)}
-        className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors"
       >
-        <X className="w-4 h-4 text-gray-500" />
+  <X className="w-4 h-4 text-gray-500 dark:text-gray-300" />
       </button>
     </motion.div>
   )

@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 import google.generativeai as genai
 from openai import OpenAI
 from ..utils.prompt_cache import PromptCache
+from ..utils.model_error_handler import ModelErrorHandler
 
 
 class MultiModelClient:
@@ -17,6 +18,7 @@ class MultiModelClient:
     def __init__(self):
         self.models = []
         self.cache = PromptCache()
+        self.error_handler = ModelErrorHandler()
         self._initialize_models()
     
     def _initialize_models(self):
@@ -74,64 +76,126 @@ class MultiModelClient:
         if not self.models:
             print("⚠️ No AI models available - will use mock responses")
     
-    def analyze_repository(self, repo_data: Dict, mermaid_diagram: str) -> Dict:
-        """Try to analyze repository with available models"""
-        
-        # Create detailed repository overview
-        file_list = []
+    def analyze_repository(self, repo_knowledge: Dict, mermaid_diagram: str) -> Dict:
+        """Analyze repository with curated, lightweight context and caching for speed."""
+
+        # Normalize inputs (support both knowledge payload and raw file map)
+        file_structure = []
+        file_contents = {}
+        analysis_prev = {}
+        if isinstance(repo_knowledge, dict):
+            if 'file_structure' in repo_knowledge or 'file_contents' in repo_knowledge:
+                file_structure = repo_knowledge.get('file_structure') or []
+                file_contents = repo_knowledge.get('file_contents') or {}
+                analysis_prev = repo_knowledge.get('analysis') or {}
+            else:
+                file_structure = list(repo_knowledge.keys())
+                file_contents = repo_knowledge
+
+        # Curate file list to reduce prompt size
+        def rank(path: str) -> int:
+            p = path.lower()
+            score = 0
+            if any(k in p for k in ["main.py", "app.py", "server", "api/", "routes", "controllers", "views", "pages", "handler"]):
+                score += 5
+            if any(k in p for k in ["model", "schema", "entity", "dto"]):
+                score += 3
+            if any(k in p for k in ["service", "usecase", "repository/"]):
+                score += 3
+            if any(k in p for k in ["config", "settings", "env", "docker", "compose", "requirements.txt", "package.json"]):
+                score += 2
+            if any(p.endswith(ext) for ext in [".py", ".ts", ".tsx", ".js", ".jsx"]):
+                score += 1
+            return -score
+
+        ranked_files = sorted(file_structure, key=rank)[:80]
+        file_list = [f"- {path}" for path in ranked_files]
+
+        # Sample code from smaller/key files with shorter snippets to cut tokens
+        def content_size(item):
+            _, info = item
+            if isinstance(info, dict):
+                return len(info.get('content', '') or '')
+            return len(str(info) or '')
+
+        samples = []
+        for path in ranked_files:
+            if path in file_contents:
+                samples.append((path, file_contents[path]))
+        if len(samples) < 15:
+            for path, info in file_contents.items():
+                if path not in dict(samples):
+                    samples.append((path, info))
+                if len(samples) >= 15:
+                    break
+        samples = sorted(samples, key=content_size)[:12]
+
         code_snippets = []
-        
-        for file_path, file_info in repo_data.items():
-            file_list.append(f"- {file_path} ({file_info.get('type', 'unknown')})")
-            
-            # Include code snippets for important files
-            if file_info.get('content') and len(file_info.get('content', '')) < 2000:
-                code_snippets.append(f"\n--- {file_path} ---\n{file_info.get('content', '')[:1000]}")
-        
-        more_files_text = (f"... and {len(repo_data) - 50} more files" 
-                           if len(repo_data) > 50 else "")
-        
+        for path, info in samples:
+            content = info.get('content', '') if isinstance(info, dict) else str(info)
+            snippet = (content or '')[:1200]
+            if snippet:
+                code_snippets.append(f"\n--- {path} ---\n{snippet}")
+
+        prev_summary = ""
+        if analysis_prev:
+            tech = analysis_prev.get('tech_stack') or {}
+            comps = analysis_prev.get('components') or []
+            prev_summary = f"Tech stack: {tech}\nComponents (sample): {comps[:10]}\n"
+
+        more_files_text = (f"... and {max(0, len(file_structure) - len(ranked_files))} more files"
+                           if len(file_structure) > len(ranked_files) else "")
+
         prompt = f"""
-        You are analyzing a repository that has been ALREADY UPLOADED and extracted. 
-        You have COMPLETE access to the codebase content below. DO NOT suggest 
-        accessing external repositories or GitHub links - analyze ONLY the provided 
-        files.
-        
-        COMPLETE REPOSITORY DATA PROVIDED:
-        - Total files available: {len(repo_data)}
-        - File structure (all files listed):
-        {chr(10).join(file_list[:50])}  # Showing first 50 files
-        {more_files_text}
-        
-        ARCHITECTURE DIAGRAM GENERATED:
+        You are analyzing an ALREADY UPLOADED repository. Analyze ONLY the provided files.
+
+        SUMMARY CONTEXT (existing knowledge):
+        {prev_summary}
+
+        ARCHITECTURE DIAGRAM (Mermaid):
         {mermaid_diagram}
-        
-        ACTUAL FILE CONTENTS (samples):
-        {chr(10).join(code_snippets[:10])}  # Showing first 10 code files
-        
-        TASK: Analyze the PROVIDED repository data above and give:
-        1. Detailed architecture summary based on the actual files shown
-        2. Key components and their relationships (reference actual file names)
-        3. Data flow patterns and API structure (from actual code)
-        4. Integration points and dependencies (from actual files)
-        5. Specific feature addition recommendations (exact file locations)
-        
-        Base your analysis ONLY on the files and code provided above.
-        Do NOT mention accessing external repositories.
+
+        CURATED FILE LIST (top {len(ranked_files)} by importance):
+        {chr(10).join(file_list)}
+        {more_files_text}
+
+        ACTUAL CODE SAMPLES ({len(code_snippets)} files):
+        {chr(10).join(code_snippets)}
+
+        TASK: Provide:
+        1) Architecture summary with file references
+        2) Data flow/API structure citing files/functions
+        3) Integration points and dependencies
+        4) Specific recommendations with exact file paths
+
+        Only use the provided context. Do not suggest accessing external repositories.
         """
-        
-        # Try each model until one works
+
+        # Fast-path cache (cheap and coarse key)
+        cache_key = f"analyze::{len(file_structure)}::{bool(mermaid_diagram)}::{len(code_snippets)}"
+        cached = self.cache.get(cache_key, "summary")
+        if cached:
+            return {"architecture_summary": cached, "model_used": "cache"}
+
+        # Model attempts (favor fast settings)
         for model_info in self.models:
             try:
-                print(f"Trying {model_info['name']} for analysis...")
-                
                 if model_info['type'] == 'gemini':
-                    response = model_info['client'].generate_content(prompt)
-                    return {
-                        "architecture_summary": response.text,
-                        "model_used": model_info['name']
-                    }
-                
+                    import time
+                    max_retries = 1
+                    base_delay = 1
+                    for attempt in range(max_retries + 1):
+                        try:
+                            resp = model_info['client'].generate_content(prompt)
+                            summary = resp.text
+                            if summary:
+                                self.cache.set(cache_key, summary, "summary")
+                            return {"architecture_summary": summary, "model_used": model_info['name']}
+                        except Exception as e:
+                            if attempt < max_retries and ("504" in str(e) or "deadline" in str(e).lower()):
+                                time.sleep(base_delay)
+                                continue
+                            break
                 elif model_info['type'] in ['openai', 'azure_openai']:
                     response = model_info['client'].chat.completions.create(
                         model="gpt-3.5-turbo",
@@ -139,20 +203,21 @@ class MultiModelClient:
                             {"role": "system", "content": "You are an expert software architect."},
                             {"role": "user", "content": prompt}
                         ],
-                        max_tokens=1000,
-                        temperature=0.3
+                        max_tokens=600,
+                        temperature=0.2
                     )
-                    return {
-                        "architecture_summary": response.choices[0].message.content,
-                        "model_used": model_info['name']
-                    }
-                    
+                    summary = response.choices[0].message.content
+                    if summary:
+                        self.cache.set(cache_key, summary, "summary")
+                    return {"architecture_summary": summary, "model_used": model_info['name']}
             except Exception as e:
                 print(f"❌ {model_info['name']} failed: {e}")
                 continue
-        
-        # All models failed, return mock response
-        return self._mock_analysis(repo_data, mermaid_diagram)
+
+        # Fallback
+        fallback = self._mock_analysis(repo_knowledge, mermaid_diagram)
+        self.cache.set(cache_key, fallback.get("architecture_summary", ""), "summary")
+        return fallback
     
     def suggest_feature_placement(self, feature_description: str, knowledge_base: Dict) -> Dict:
         """Suggest feature placement using available models"""
@@ -254,11 +319,31 @@ class MultiModelClient:
                 print(f"Trying {model_info['name']} for feature placement...")
                 
                 if model_info['type'] == 'gemini':
-                    response = model_info['client'].generate_content(prompt)
-                    return {
-                        "suggestions": response.text,
-                        "model_used": model_info['name']
-                    }
+                    # Add timeout and retry logic for Gemini
+                    import time
+                    max_retries = 2
+                    base_delay = 1
+                    
+                    for attempt in range(max_retries + 1):
+                        try:
+                            response = model_info['client'].generate_content(prompt)
+                            return {
+                                "suggestions": response.text,
+                                "model_used": model_info['name']
+                            }
+                        except Exception as gemini_error:
+                            if "504" in str(gemini_error) or "deadline" in str(gemini_error).lower():
+                                if attempt < max_retries:
+                                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                                    print(f"❌ {model_info['name']} timeout (attempt {attempt + 1}/{max_retries + 1}), retrying in {delay}s...")
+                                    time.sleep(delay)
+                                    continue
+                                else:
+                                    print(f"❌ {model_info['name']} failed after {max_retries + 1} attempts: {gemini_error}")
+                                    break
+                            else:
+                                print(f"❌ {model_info['name']} failed: {gemini_error}")
+                                break
                 
                 elif model_info['type'] in ['openai', 'azure_openai']:
                     response = model_info['client'].chat.completions.create(
@@ -314,8 +399,44 @@ class MultiModelClient:
                     # Ensure API key is configured before making the call
                     if 'api_key' in model_info:
                         genai.configure(api_key=model_info['api_key'])
-                    response = model_info['client'].generate_content(prompt)
-                    result = response.text
+                    
+                    # Add timeout and retry logic for Gemini
+                    import time
+                    max_retries = 2
+                    base_delay = 1
+                    
+                    for attempt in range(max_retries + 1):
+                        try:
+                            response = model_info['client'].generate_content(prompt)
+                            result = response.text
+                            
+                            # Cache the successful response
+                            self.cache.set(prompt, result, model_info['name'])
+                            print(f"✅ {model_info['name']} response generated and cached")
+                            return result
+                            
+                        except Exception as gemini_error:
+                            self.error_handler.record_error(model_info['name'], gemini_error, {'attempt': attempt + 1})
+                            
+                            if "504" in str(gemini_error) or "deadline" in str(gemini_error).lower():
+                                if attempt < max_retries:
+                                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                                    print(f"❌ {model_info['name']} timeout (attempt {attempt + 1}/{max_retries + 1}), retrying in {delay}s...")
+                                    time.sleep(delay)
+                                    continue
+                                else:
+                                    print(f"❌ {model_info['name']} failed after {max_retries + 1} attempts: {gemini_error}")
+                                    
+                                    # Check if we have a recent relevant cache for this type of request
+                                    cached_response = self.cache.get(prompt, model_info['name'])
+                                    if cached_response:
+                                        print(f"🔄 Using relevant cached response due to timeout")
+                                        return cached_response
+                                    break
+                            else:
+                                print(f"❌ {model_info['name']} failed: {gemini_error}")
+                                break
+                
                 elif model_info['name'] in ['OpenAI GPT-4', 'OpenAI GPT-3.5']:
                     response = model_info['client'].chat.completions.create(
                         model=model_info['model_id'],
@@ -324,66 +445,132 @@ class MultiModelClient:
                         temperature=0.7
                     )
                     result = response.choices[0].message.content
+                    
+                    # Cache the successful response
+                    self.cache.set(prompt, result, model_info['name'])
+                    print(f"✅ {model_info['name']} response generated and cached")
+                    return result
                 else:
                     continue
                 
-                # Cache the successful response
-                self.cache.set(prompt, result, model_info['name'])
-                print(f"✅ {model_info['name']} response generated and cached")
-                return result
                 
             except Exception as e:
+                self.error_handler.record_error(model_info['name'], e)
                 print(f"❌ {model_info['name']} failed: {e}")
                 continue
-        
-        # If all models fail, return a fallback response
-        fallback_response = self._generate_fallback_response(prompt)
-        self.cache.set(prompt, fallback_response, "fallback")
+
+        # If all models fail, return a contextual fallback response
+        failed_models = [model['name'] for model in models_to_try]
+        fallback_response = self.error_handler.generate_contextual_fallback(prompt, failed_models)
+        self.cache.set(prompt, fallback_response, "enhanced_fallback")
         return fallback_response
-    
+
     def _generate_fallback_response(self, prompt: str) -> str:
         """Generate a fallback response when all AI models fail"""
-        if "visualization" in prompt.lower() or "add" in prompt.lower():
-            return """Based on common software architecture patterns, here are some suggestions for adding visualizations:
-
-## Common Locations for Visualizations:
-
-1. **Frontend Components Directory**
-   - `src/components/charts/` or `src/components/visualizations/`
-   - Create reusable chart components (LineChart, BarChart, etc.)
-
-2. **Dashboard/Analytics Section**
-   - `src/pages/dashboard/` or `src/views/analytics/`
-   - Dedicated pages for data visualization
-
-3. **Shared UI Library**
-   - `src/shared/components/` or `lib/components/`
-   - If building a component library
-
-## Recommended Tech Stack:
-- **React**: Recharts, Chart.js, D3.js, or Victory
-- **Vue**: Vue-ChartJS, D3.js
-- **Angular**: Chart.js, D3.js, ng2-charts
-
-## Files to Create/Modify:
-1. Create chart component files
-2. Add dependencies to package.json
-3. Update routing (if new pages)
-4. Add data fetching services
-5. Update main layout to include new sections
-
-*Note: For more specific recommendations, please analyze your actual codebase.*"""
         
-        return """I apologize, but I'm currently unable to access the AI models to provide a detailed response. Please try again later, or consider:
+        # Analyze the prompt to provide more contextual fallback
+        prompt_lower = prompt.lower()
+        
+        # Check for specific types of requests
+        if any(keyword in prompt_lower for keyword in ["crypto", "blockchain", "bitcoin", "ethereum", "solana", "defi"]):
+            return """I apologize, but I'm currently unable to access AI models to provide detailed crypto/blockchain analysis. 
 
-1. Checking your internet connection
-2. Verifying API keys are configured correctly
-3. Trying a different question
+For building a crypto analysis agent with news and data fetching:
 
-For architectural questions, I recommend:
-- Following established patterns in your existing codebase
-- Consulting documentation for your framework/libraries
-- Looking at similar projects for inspiration"""
+## Recommended Approach:
+1. **Data Sources Integration:**
+   - CoinGecko API for price/market data
+   - News APIs (NewsAPI, Alpha Vantage) for sentiment analysis
+   - Twitter API v2 for social sentiment
+   - Blockchain APIs (Etherscan, Solana API) for on-chain data
+
+2. **Implementation Strategy:**
+   - Use the HTTP request tools for API integrations
+   - Create custom tools for each data source
+   - Implement data aggregation and analysis logic
+   - Use the agent builder to orchestrate different analysis tasks
+
+3. **Architecture Suggestions:**
+   - Separate data collection, analysis, and reporting agents
+   - Use shared memory for cross-agent communication
+   - Implement caching for expensive API calls
+   - Add error handling for API rate limits
+
+Please try again later for more detailed assistance, or check the examples directory for HTTP integration patterns."""
+
+        elif any(keyword in prompt_lower for keyword in ["next.js", "nextjs", "react", "frontend"]):
+            return """I'm currently unable to access AI models for detailed Next.js guidance.
+
+For integrating with Next.js:
+- The SDK appears to support Next.js based on the tsconfig/nextjs.json configuration
+- Check the examples directory for integration patterns
+- Use the agent builder in your Next.js API routes
+- Consider server-side agent execution for better performance
+
+Please try again later for specific implementation details."""
+
+        elif any(keyword in prompt_lower for keyword in ["visualization", "chart", "graph", "dashboard"]):
+            return """I'm unable to provide detailed visualization guidance right now.
+
+For adding visualizations:
+1. **Frontend Components:**
+   - Create reusable chart components
+   - Use libraries like Recharts, Chart.js, or D3.js
+
+2. **Data Integration:**
+   - Connect to your analysis agents via API
+   - Implement real-time data updates
+   - Add filtering and interaction capabilities
+
+3. **Common Locations:**
+   - `src/components/charts/` for reusable components
+   - `src/pages/dashboard/` for visualization pages
+   - Update routing and navigation as needed
+
+Please try again later for more specific recommendations."""
+
+        elif "sdk" in prompt_lower or "adk" in prompt_lower:
+            return """I'm currently unable to access AI models for detailed SDK analysis.
+
+Based on the repository structure, the ADK (Agent Development Kit) provides:
+- Multi-LLM support (Gemini, OpenAI, Anthropic)
+- Agent builder with fluent API
+- Tool creation framework
+- Session management
+- Memory services
+- Code execution capabilities
+
+Key capabilities for your use case:
+- HTTP request tools for API integration
+- Agent orchestration and workflow management
+- Tool composition and reuse
+- Authentication handling
+
+Check the apps/examples directory for implementation patterns and starter templates.
+
+Please try again later for more detailed guidance."""
+
+        else:
+            return """I apologize, but I'm currently unable to access the AI models to provide a detailed response. This appears to be a temporary issue.
+
+## Troubleshooting Steps:
+1. Check your internet connection
+2. Verify API keys are configured correctly
+3. Try again in a few moments
+4. Check the console for specific error messages
+
+## General Recommendations:
+- Follow established patterns in your existing codebase
+- Consult documentation for your framework/libraries
+- Look at similar projects for inspiration
+- Check the examples directory for implementation patterns
+
+If the issue persists, consider:
+- Checking API service status
+- Reviewing rate limiting policies
+- Ensuring proper authentication configuration
+
+Please try your request again later."""
     
     def _mock_analysis(self, repo_data: Dict, mermaid_diagram: str) -> Dict:
         """Generate mock analysis when all AI models fail"""

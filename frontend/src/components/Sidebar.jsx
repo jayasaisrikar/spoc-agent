@@ -70,21 +70,21 @@ const Sidebar = ({
             animate={{ x: 0 }}
             exit={{ x: -320 }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="lg:relative lg:z-auto fixed left-0 top-0 bottom-0 w-80 bg-white border-r border-gray-200 z-50 flex flex-col"
+            className="lg:relative lg:z-auto fixed left-0 top-0 bottom-0 w-80 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 z-50 flex flex-col min-h-0"
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-lg font-light text-gray-900">History</h2>
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+              <h2 className="text-lg font-light text-gray-900 dark:text-gray-100">History</h2>
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
               >
-                <X className="w-5 h-5 text-gray-400" />
+                <X className="w-5 h-5 text-gray-400 dark:text-gray-300" />
               </button>
             </div>
 
             {/* Actions */}
-            <div className="p-6 border-b border-gray-200">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-800">
               <div className="space-y-3">
                 <button
                   onClick={() => {
@@ -111,13 +111,13 @@ const Sidebar = ({
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 min-h-0">
               {repositories.length === 0 ? (
                 <div className="text-center py-12">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-                    <Clock className="w-8 h-8 text-gray-300" />
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                    <Clock className="w-8 h-8 text-gray-300 dark:text-gray-500" />
                   </div>
-                  <p className="text-gray-500 text-sm font-light">No repositories yet</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm font-light">No repositories yet</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -126,23 +126,23 @@ const Sidebar = ({
                       key={repo.id}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="p-4 hover:bg-gray-50 rounded-xl transition-colors cursor-pointer group"
+                      className="p-4 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-xl transition-colors cursor-pointer group"
                       onClick={() => onSelectRepository?.(repo)}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
                           {repo.type === 'upload' ? (
-                            <UploadIcon className="w-5 h-5 text-gray-600" />
+                            <UploadIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                           ) : (
-                            <Github className="w-5 h-5 text-gray-600" />
+                            <Github className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                           )}
                         </div>
                         
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-medium text-gray-900 text-sm truncate">
+                          <h3 className="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">
                             {repo.name}
                           </h3>
-                          <p className="text-xs text-gray-500 mt-1 font-light">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-light">
                             {formatDate(repo.analyzedAt)}
                           </p>
                         </div>
@@ -155,10 +155,10 @@ const Sidebar = ({
 
             {/* Footer */}
             {repositories.length > 0 && (
-              <div className="p-6 border-t border-gray-200">
+              <div className="p-6 border-t border-gray-200 dark:border-gray-800">
                 <button
                   onClick={onClearHistory}
-                  className="w-full px-4 py-3 text-sm text-red-600 hover:bg-red-50 rounded-full transition-colors font-medium"
+                  className="w-full px-4 py-3 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-colors font-medium"
                 >
                   Clear History
                 </button>

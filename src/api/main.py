@@ -427,7 +427,9 @@ async def smart_analyze_with_context(
             result = await agentic_adapter.orchestrator.autonomous_analyze(goal)
         else:
             # Fallback to regular analysis
-            result = ai_client.analyze_repository(repo_data, user_request or "")
+            # Include diagram context if available in knowledge base
+            kb_mermaid = repo_data.get('mermaid_diagram') if isinstance(repo_data, dict) else None
+            result = ai_client.analyze_repository(repo_data, kb_mermaid or (user_request or ""))
             
         return {"status": "success", "data": result}
         
@@ -444,6 +446,117 @@ async def health_check():
     """Health check endpoint"""
     logger.info("Health check performed")
     return {"status": "healthy", "message": "AI Code Architecture Agent is running"}
+
+
+@app.get("/api/model-health")
+async def get_model_health():
+    """Get the current health status of AI models"""
+    try:
+        # Get model availability
+        available_models = []
+        for model_info in ai_client.models:
+            available_models.append({
+                'name': model_info['name'],
+                'type': model_info['type'],
+                'healthy': ai_client.error_handler.is_model_healthy(model_info['name'])
+            })
+        
+        # Get error summary
+        error_summary = ai_client.error_handler.get_error_summary()
+        
+        # Get cache stats
+        cache_stats = ai_client.cache.get_stats()
+        
+        return {
+            'success': True,
+            'models': available_models,
+            'total_models': len(available_models),
+            'healthy_models': len([m for m in available_models if m['healthy']]),
+            'error_summary': error_summary,
+            'cache_stats': cache_stats,
+            'recommendations': _get_health_recommendations(available_models, error_summary)
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'models': [],
+            'total_models': 0,
+            'healthy_models': 0
+        }
+
+
+@app.post("/api/clear-model-errors")
+async def clear_model_errors():
+    """Clear recorded model errors (admin endpoint)"""
+    try:
+        ai_client.error_handler.error_count.clear()
+        ai_client.error_handler.last_errors.clear()
+        
+        return {
+            'success': True,
+            'message': 'Model error history cleared'
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+@app.post("/api/clear-cache")
+async def clear_cache():
+    """Clear the response cache (admin endpoint)"""
+    try:
+        cleared_count = ai_client.cache.clear_all()
+        
+        return {
+            'success': True,
+            'message': f'Cleared {cleared_count} cache entries'
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def _get_health_recommendations(models: list, error_summary: dict) -> list:
+    """Generate health recommendations based on current status"""
+    recommendations = []
+    
+    healthy_count = len([m for m in models if m['healthy']])
+    total_count = len(models)
+    
+    if healthy_count == 0:
+        recommendations.append({
+            'type': 'critical',
+            'message': 'No healthy AI models available. Check API keys and network connectivity.'
+        })
+    elif healthy_count < total_count:
+        unhealthy = [m['name'] for m in models if not m['healthy']]
+        recommendations.append({
+            'type': 'warning',
+            'message': f'Some models are unhealthy: {", ".join(unhealthy)}. Consider checking their configuration.'
+        })
+    
+    total_errors = error_summary.get('total_errors', 0)
+    if total_errors > 10:
+        recommendations.append({
+            'type': 'warning',
+            'message': f'High error count ({total_errors}). Consider clearing error history or checking model configurations.'
+        })
+    
+    if not recommendations:
+        recommendations.append({
+            'type': 'success',
+            'message': 'All models are healthy and functioning normally.'
+        })
+    
+    return recommendations
 
 
 @app.post("/ask-question")

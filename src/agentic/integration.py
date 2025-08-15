@@ -8,9 +8,6 @@ from pathlib import Path
 import sys
 import os
 
-# Add parent directory to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
 from .core.orchestrator import AgenticOrchestrator
 from .core.models import Goal, TaskType
 
@@ -23,15 +20,19 @@ class AgenticIntegrationAdapter:
     def __init__(self):
         self.orchestrator = None
         self._initialized = False
+        # Keep direct references to components for convenience
+        self.knowledge_base = None
+        self.ai_client = None
+        self.memory_manager = None
+        self.diagram_generator = None
         
     async def initialize(self) -> bool:
         """Initialize the agentic orchestrator with existing system components"""
         try:
-            # Import existing components with error handling
-            import sys
-            import os
-            parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            sys.path.insert(0, parent_dir)
+            # Ensure package root is importable (usually already true when running FastAPI)
+            package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # src/
+            if package_root not in sys.path:
+                sys.path.insert(0, package_root)
             
             # Try to import existing components
             knowledge_base = None
@@ -40,31 +41,36 @@ class AgenticIntegrationAdapter:
             diagram_generator = None
             
             try:
-                from knowledge_base import KnowledgeBase
+                # Prefer absolute package imports to match the rest of the app
+                from src.data.knowledge_base import KnowledgeBase
                 knowledge_base = KnowledgeBase()
-            except ImportError:
+            except Exception as e:
                 logger.warning("KnowledgeBase not available, using mock")
+                logger.debug(f"KnowledgeBase import error: {e}")
                 knowledge_base = self._create_mock_knowledge_base()
                 
             try:
-                from multi_model_client import MultiModelClient  
+                from src.ai.multi_model_client import MultiModelClient  
                 ai_client = MultiModelClient()
-            except ImportError:
+            except Exception as e:
                 logger.warning("MultiModelClient not available, using mock")
+                logger.debug(f"MultiModelClient import error: {e}")
                 ai_client = self._create_mock_ai_client()
                 
             try:
-                from memory_manager import MemoryManager
+                from src.ai.memory_manager import MemoryManager
                 memory_manager = MemoryManager()
-            except ImportError:
+            except Exception as e:
                 logger.warning("MemoryManager not available, using mock")
+                logger.debug(f"MemoryManager import error: {e}")
                 memory_manager = self._create_mock_memory_manager()
                 
             try:
-                from diagram_generator import DiagramGenerator
+                from src.core.diagram_generator import DiagramGenerator
                 diagram_generator = DiagramGenerator()
-            except ImportError:
+            except Exception as e:
                 logger.warning("DiagramGenerator not available, using mock")
+                logger.debug(f"DiagramGenerator import error: {e}")
                 diagram_generator = self._create_mock_diagram_generator()
             
             # Create orchestrator
@@ -74,6 +80,11 @@ class AgenticIntegrationAdapter:
                 memory_manager=memory_manager,
                 diagram_generator=diagram_generator
             )
+            # Save direct references
+            self.knowledge_base = knowledge_base
+            self.ai_client = ai_client
+            self.memory_manager = memory_manager
+            self.diagram_generator = diagram_generator
             
             self._initialized = True
             logger.info("Agentic orchestrator initialized successfully")
@@ -86,17 +97,29 @@ class AgenticIntegrationAdapter:
     def _create_mock_knowledge_base(self):
         """Create a mock knowledge base for testing"""
         class MockKnowledgeBase:
-            async def get_repositories(self): return []
-            async def get_repository_data(self, repo_name): return {}
-            async def analyze_repository_structure(self, repo_data): return {}
+            def list_repositories(self):
+                return []
+            def get_repository_knowledge(self, repo_name):
+                return {}
+            def get_all_repositories_knowledge(self):
+                return {}
+            def get_organization_patterns(self):
+                return {"common_patterns": [], "notes": "mock"}
             
         return MockKnowledgeBase()
         
     def _create_mock_ai_client(self):
         """Create a mock AI client for testing"""
         class MockAIClient:
-            async def analyze_with_ai(self, prompt, data): return {"analysis": "mock"}
-            async def generate_response(self, prompt): return "Mock response"
+            def analyze_repository(self, repo_data, mermaid_diagram):
+                return {
+                    "components": [],
+                    "architecture_patterns": [],
+                    "tech_stack": {},
+                    "analysis_note": "mock"
+                }
+            async def generate_response(self, prompt):
+                return "Mock response"
             
         return MockAIClient()
         
@@ -111,7 +134,10 @@ class AgenticIntegrationAdapter:
     def _create_mock_diagram_generator(self):
         """Create a mock diagram generator for testing"""
         class MockDiagramGenerator:
-            async def generate_architecture_diagram(self, data): return "graph TD\n  A[Mock Diagram]"
+            async def generate_mermaid_async(self, repo_data):
+                return "graph TD\n  A[Mock Diagram]"
+            def optimize_for_context(self, mermaid_code: str) -> str:
+                return mermaid_code
             
         return MockDiagramGenerator()
             
@@ -148,7 +174,7 @@ class AgenticIntegrationAdapter:
             
         try:
             # Get repository data
-            repo_data = self.knowledge_base.get_repository_knowledge(repo_name)
+            repo_data = self.orchestrator.knowledge_base.get_repository_knowledge(repo_name)
             if not repo_data:
                 repo_data = {"error": "Repository not found in knowledge base"}
             
@@ -178,7 +204,7 @@ class AgenticIntegrationAdapter:
             # Get repository data if repo_name provided
             repo_data = {}
             if repo_name:
-                repo_data = self.knowledge_base.get_repository_knowledge(repo_name)
+                repo_data = self.orchestrator.knowledge_base.get_repository_knowledge(repo_name)
                 if not repo_data:
                     repo_data = {"error": "Repository not found in knowledge base"}
             

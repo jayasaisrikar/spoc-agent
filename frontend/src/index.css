@@ -8,7 +8,7 @@
   }
   
   body {
-    @apply bg-white text-gray-900;
+    @apply bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100;
   }
   
   * {
@@ -21,15 +21,15 @@
   }
   
   *::-webkit-scrollbar-track {
-    @apply bg-gray-50;
+    @apply bg-gray-50 dark:bg-gray-900;
   }
   
   *::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 rounded-full;
+    @apply bg-gray-300 dark:bg-gray-700 rounded-full;
   }
   
   *::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-400;
+    @apply bg-gray-400 dark:bg-gray-600;
   }
 }
 
@@ -39,15 +39,15 @@
   }
   
   .chat-bubble-user {
-    @apply bg-gray-900 text-white ml-auto;
+    @apply bg-gray-900 text-white ml-auto dark:bg-gray-800;
   }
   
   .chat-bubble-assistant {
-    @apply bg-gray-50 text-gray-900 border border-gray-200;
+    @apply bg-gray-50 text-gray-900 border border-gray-200 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-800;
   }
   
   .code-block {
-    @apply bg-gray-50 border border-gray-200 rounded-lg p-4 font-mono text-sm overflow-x-auto;
+    @apply bg-gray-50 border border-gray-200 rounded-lg p-4 font-mono text-sm overflow-x-auto dark:bg-gray-900 dark:border-gray-800;
   }
   
   .typing-indicator {
@@ -71,4 +71,11 @@
   border-right: 2px solid #374151;
   white-space: nowrap;
   animation: typewriter 2s steps(40, end);
+}
+
+/* Respect prefers-color-scheme for initial theme */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    color-scheme: dark;
+  }
 }

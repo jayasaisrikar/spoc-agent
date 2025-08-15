@@ -43,16 +43,72 @@ class PromptCache:
                 os.remove(cache_path)
                 return None
             
-            print(f"Cache hit for prompt: {prompt[:50]}...")
-            return cache_data['response']
+            # Check if the cached prompt is actually relevant to the current one
+            cached_prompt = cache_data.get('prompt', '')
+            
+            # For conversation-based prompts, check if they're from the same context
+            if self._is_conversation_relevant(prompt, cached_prompt):
+                print(f"Cache hit for prompt: {prompt[:50]}...")
+                return cache_data['response']
+            else:
+                print(f"Cache found but not relevant for current context: {prompt[:50]}...")
+                return None
             
         except Exception as e:
             print(f"Error reading cache: {e}")
             return None
     
+    def _is_conversation_relevant(self, current_prompt: str, cached_prompt: str) -> bool:
+        """Check if cached response is relevant to current prompt context"""
+        
+        # Extract repository/user context from prompts
+        def extract_context_markers(prompt: str):
+            markers = set()
+            
+            # Look for repository names
+            import re
+            repo_pattern = r"(?:repository|repo)['\s]*[\"'`]?([a-zA-Z0-9\-_]+/[a-zA-Z0-9\-_]+)[\"'`]?"
+            repo_matches = re.findall(repo_pattern, prompt.lower())
+            markers.update(repo_matches)
+            
+            # Look for user IDs
+            user_pattern = r"user[_\s]*id['\s]*[\"'`]?([a-zA-Z0-9\-_]+)[\"'`]?"
+            user_matches = re.findall(user_pattern, prompt.lower())
+            markers.update(user_matches)
+            
+            # Look for specific project names
+            project_pattern = r"[\"'`]([a-zA-Z0-9\-_]{3,})[\"'`]"
+            project_matches = re.findall(project_pattern, prompt)
+            markers.update([m.lower() for m in project_matches if len(m) > 3])
+            
+            return markers
+        
+        current_markers = extract_context_markers(current_prompt)
+        cached_markers = extract_context_markers(cached_prompt)
+        
+        # If no specific markers found, allow cache (for general questions)
+        if not current_markers and not cached_markers:
+            return True
+            
+        # If markers exist, they should overlap significantly
+        if current_markers and cached_markers:
+            overlap = len(current_markers.intersection(cached_markers))
+            total_unique = len(current_markers.union(cached_markers))
+            similarity = overlap / total_unique if total_unique > 0 else 0
+            return similarity > 0.5  # At least 50% similarity
+        
+        # If one has markers and other doesn't, they're likely not relevant
+        return False
+    
     def set(self, prompt: str, response: str, model: str = "default") -> None:
         """Store response in cache"""
         try:
+            # Limit response size to prevent huge cache files
+            max_response_size = 50000  # 50KB limit
+            if len(response) > max_response_size:
+                print(f"Response too large for cache ({len(response)} chars), truncating...")
+                response = response[:max_response_size] + "\n\n[Response truncated for caching...]"
+            
             cache_key = self._get_cache_key(prompt, model)
             cache_path = self._get_cache_path(cache_key)
             

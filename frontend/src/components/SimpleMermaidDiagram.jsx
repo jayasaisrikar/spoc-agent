@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Copy, Check, Download, ZoomIn } from 'lucide-react'
 
 // Global flag to track if Mermaid is loaded
@@ -30,15 +30,17 @@ const SimpleMermaidDiagram = ({ chart, id }) => {
         return
       }
 
-      // Load Mermaid from CDN
+      // Load Mermaid from CDN (v11 to match dependency)
       mermaidLoading = true
       const script = document.createElement('script')
-      script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js'
+      script.src = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'
       script.onload = () => {
         console.log('Mermaid loaded from CDN')
+        const dark = document.documentElement.classList.contains('dark')
         window.mermaid.initialize({ 
           startOnLoad: false,
-          theme: 'dark',
+          securityLevel: 'loose',
+          theme: dark ? 'dark' : 'default',
           themeVariables: {
             primaryColor: '#3b82f6',
             primaryTextColor: '#f3f4f6',
@@ -78,6 +80,55 @@ const SimpleMermaidDiagram = ({ chart, id }) => {
     }
   }, [chart, isReady])
 
+  const stripCodeFences = (raw) => {
+    let s = raw.trim()
+    // Remove leading ```mermaid / ``` and trailing ```
+    if (s.startsWith('```')) {
+      s = s.replace(/^```\s*mermaid\s*/i, '')
+      s = s.replace(/^```/, '')
+      s = s.replace(/```\s*$/, '')
+    }
+    return s
+  }
+
+  const preprocessMermaid = (raw) => {
+    const s0 = stripCodeFences(raw || '')
+    const s = s0.replace(/\r\n?/g, '\n').trim()
+    if (!s) return s
+    const directiveRe = /^(%%\{.*?\}%%\s*)?(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|stateDiagram-v2|erDiagram|journey|gantt|pie|mindmap|timeline|quadrantChart|xychart-beta|gitGraph)\b/i
+    let result = s
+    // Auto-prefix flowchart if missing directive
+    if (!directiveRe.test(result)) {
+      result = `flowchart TD\n${result}`
+    }
+    return result
+  }
+
+  const sanitizeFlowchartLabels = (raw) => {
+    // Escape parentheses inside [label] to avoid parser issues on some versions
+    // Only touch bracket labels, not shape syntax like ( ) or (( ))
+    return raw.replace(/\[([^\]]+)\]/g, (m, label) => {
+      return `[${label.replace(/\(/g, '&#40;').replace(/\)/g, '&#41;')}]`
+    })
+  }
+
+  const normalizeEdgeLabels = (raw) => {
+    // Convert lines like: A --> B: label  ==>  A -->|label| B
+    const arrowRe = /(-->|-\.->|==>|--x|-.x|==x|---)/
+    const lines = raw.split('\n')
+    const out = lines.map(line => {
+      if (!arrowRe.test(line) || !line.includes(':')) return line
+      // Try to capture left, arrow, right, label
+      const m = line.match(/^(.*?)\s*(-->|-\.->|==>|--x|-.x|==x|---)\s*([^:]+?):\s*(.+)$/)
+      if (!m) return line
+      const [, left, arrow, right, label] = m
+      // Avoid messing with subgraph/graph decl lines
+      if (/^(subgraph|graph|flowchart|classDiagram|sequenceDiagram|stateDiagram)/i.test(left.trim())) return line
+      return `${left}${arrow}|${label.trim()}| ${right.trim()}`
+    })
+    return out.join('\n')
+  }
+
   const renderDiagram = async () => {
     if (!elementRef.current || !chart || !window.mermaid || !isReady) {
       console.log('Cannot render diagram:', { 
@@ -98,11 +149,38 @@ const SimpleMermaidDiagram = ({ chart, id }) => {
       // Create a unique ID
       const diagramId = id || `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       
-      // Clean the chart syntax
-      const cleanChart = chart.trim()
+      // Preprocess and validate
+      let candidate = preprocessMermaid(chart)
+      // Attempt 1: as-is
+      try {
+        window.mermaid.parse(candidate)
+      } catch (e1) {
+        // Attempt 2: sanitize labels in []
+        let next = sanitizeFlowchartLabels(candidate)
+        try {
+          window.mermaid.parse(next)
+          candidate = next
+        } catch (e2) {
+          // Attempt 3: normalize edge labels with ':' to pipe syntax
+          next = normalizeEdgeLabels(candidate)
+          try {
+            window.mermaid.parse(next)
+            candidate = next
+          } catch (e3) {
+            // Attempt 4: both sanitize and normalize
+            const both = normalizeEdgeLabels(sanitizeFlowchartLabels(candidate))
+            try {
+              window.mermaid.parse(both)
+              candidate = both
+            } catch (e4) {
+              throw e4
+            }
+          }
+        }
+      }
       
       // Use mermaid.render to get SVG
-      const { svg } = await window.mermaid.render(diagramId, cleanChart)
+      const { svg } = await window.mermaid.render(diagramId, candidate)
       elementRef.current.innerHTML = svg
 
       // Style the SVG
@@ -116,7 +194,7 @@ const SimpleMermaidDiagram = ({ chart, id }) => {
       }
       
       console.log('Diagram rendered successfully')
-    } catch (error) {
+  } catch (error) {
       console.error('Mermaid rendering error:', error)
       elementRef.current.innerHTML = `
         <div class="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
@@ -126,6 +204,7 @@ const SimpleMermaidDiagram = ({ chart, id }) => {
             <summary class="cursor-pointer text-red-400 hover:text-red-300">Show raw Mermaid code</summary>
             <pre class="bg-red-950/30 p-2 rounded mt-2 overflow-x-auto text-red-200 whitespace-pre-wrap font-mono">${chart}</pre>
           </details>
+      <p class="text-red-300 text-xs mt-2">Tip: We automatically try to fix missing diagram directives and sanitize labels. If the diagram starts without <code>flowchart</code>/<code>graph</code>, ensure you include one. Avoid unmatched parentheses inside labels like <code>[Label (info)]</code>.</p>
         </div>
       `
     }

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Upload, Brain, Code2, FileText, Zap, Github, Upload as UploadIcon, Plus, Menu } from 'lucide-react'
+import { Send, Upload, Brain, Code2, FileText, Zap, Github, Upload as UploadIcon, Plus, Menu, Wrench } from 'lucide-react'
 import ChatMessage from './components/ChatMessage'
 import FileUpload from './components/FileUpload'
 import RepoInput from './components/RepoInput'
@@ -25,6 +25,8 @@ function App() {
     analyzeFile,
     suggestFeature,
     repositories,
+  activeRepoName,
+  setActiveRepoName,
     clearChatHistory,
     newChat,
     exportChatData,
@@ -41,6 +43,8 @@ function App() {
   const [showKnowledgeBase, setShowKnowledgeBase] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+  const toolsRef = useRef(null)
+  const [toolsOpen, setToolsOpen] = useState(false)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -49,6 +53,16 @@ function App() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Close tools menu on outside click
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!toolsRef.current) return
+      if (!toolsRef.current.contains(e.target)) setToolsOpen(false)
+    }
+    document.addEventListener('click', onDocClick)
+    return () => document.removeEventListener('click', onDocClick)
+  }, [])
 
   const handleSendMessage = async (e) => {
     e?.preventDefault()
@@ -147,7 +161,7 @@ function App() {
   ]
 
   return (
-    <div className="h-screen bg-white text-gray-900 flex overflow-hidden">
+  <div className="h-screen bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100 flex overflow-hidden">
       {/* Sidebar */}
       <div className={`${sidebarOpen ? 'w-80' : 'w-0'} transition-all duration-300 ease-in-out flex-shrink-0`}>
         <Sidebar 
@@ -182,10 +196,22 @@ function App() {
           isAutoSaved={!isSaving}
           lastSaved={lastSaved}
           sidebarOpen={sidebarOpen}
+          activeRepoName={activeRepoName}
+          repositories={repositories}
+          onSwitchRepo={async (name) => {
+            const result = await switchToRepository(name)
+            if (result.success) {
+              addToast(`Switched to ${name} conversation`, 'success')
+            } else {
+              addToast(`Failed to switch to ${name}: ${result.error}`, 'error')
+            }
+          }}
+          onSetActiveRepo={(name) => setActiveRepoName(name)}
+          onClearActiveRepo={() => setActiveRepoName(null)}
         />
 
         {/* Chat Container */}
-        <div className="flex-1 flex flex-col min-h-0">
+  <div className="flex-1 flex flex-col min-h-0">
           {/* Conditional rendering: Knowledge Base Visualizer or Chat */}
           {showKnowledgeBase ? (
             <div className="flex-1 overflow-y-auto">
@@ -246,7 +272,14 @@ function App() {
                 // Messages - cleaner layout
                 <div className="space-y-12 pb-32">
                   {messages.map((message) => (
-                    <ChatMessage key={message.id} message={message} />
+                    <ChatMessage
+                      key={message.id}
+                      message={message}
+                      onQuoteMessage={(text) => {
+                        setInput(prev => (prev ? `${prev}\n\n> ${text}` : text))
+                        inputRef.current?.focus()
+                      }}
+                    />
                   ))}
                   <div ref={messagesEndRef} />
                 </div>
@@ -256,16 +289,53 @@ function App() {
 
           {/* Input Area - Floating and minimal */}
           <div className="fixed bottom-8 z-20" style={{ 
-            left: sidebarOpen ? '50%' : '50%',
+            left: '50%',
             transform: sidebarOpen ? 'translateX(calc(-50% + 160px))' : 'translateX(-50%)',
             width: sidebarOpen ? 'calc(100% - 320px)' : '100%',
-            maxWidth: sidebarOpen ? 'calc(5xl - 320px)' : '80rem',
+            maxWidth: sidebarOpen ? 'calc(1280px - 320px)' : '80rem',
             paddingLeft: '1.5rem',
             paddingRight: '1.5rem',
             transition: 'all 0.3s ease-in-out'
           }}>
             <form onSubmit={handleSendMessage} className="relative">
-              <div className="bg-white border border-gray-200 rounded-full shadow-lg flex items-center pl-6 pr-2 py-2">
+              <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-full shadow-lg flex items-center pl-2 pr-2 py-2">
+                {/* Tools menu */}
+                <div className="relative mr-2" ref={toolsRef}>
+                  <button
+                    type="button"
+                    onClick={() => setToolsOpen(v => !v)}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                    title="Tools"
+                    aria-haspopup="menu"
+                    aria-expanded={toolsOpen}
+                  >
+                    <Wrench className="w-5 h-5 text-gray-500 dark:text-gray-300" />
+                  </button>
+                  {toolsOpen && (
+                    <div className="absolute bottom-full mb-2 left-0 w-56 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg z-50">
+                      <div className="py-1 text-sm">
+                        <button
+                          className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                          onClick={() => { setShowFileUpload(true); setToolsOpen(false) }}
+                        >
+                          Upload Project
+                        </button>
+                        <button
+                          className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                          onClick={() => { setShowRepoInput(true); setToolsOpen(false) }}
+                        >
+                          Analyze Repository
+                        </button>
+                        <button
+                          className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                          onClick={() => { setShowKnowledgeBase(true); setToolsOpen(false) }}
+                        >
+                          Knowledge Base
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <input
                   ref={inputRef}
                   type="text"
@@ -273,30 +343,30 @@ function App() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyPress}
                   placeholder="Ask about your code..."
-                  className="flex-1 bg-transparent text-gray-900 placeholder-gray-500 outline-none text-lg py-2"
+                  className="flex-1 bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none text-lg py-2"
                   disabled={isLoading}
                 />
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setShowFileUpload(true)}
-                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
                     title="Upload file"
                   >
-                    <UploadIcon className="w-5 h-5 text-gray-400" />
+                    <UploadIcon className="w-5 h-5 text-gray-400 dark:text-gray-300" />
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowRepoInput(true)}
-                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
                     title="Analyze GitHub repo"
                   >
-                    <Github className="w-5 h-5 text-gray-400" />
+                    <Github className="w-5 h-5 text-gray-400 dark:text-gray-300" />
                   </button>
                   <button
                     type="submit"
                     disabled={!input.trim() || isLoading}
-                    className="p-3 bg-black hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-full transition-colors ml-2"
+                    className="p-3 bg-black hover:bg-gray-800 disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-full transition-colors ml-2"
                   >
                     <Send className="w-5 h-5" />
                   </button>
